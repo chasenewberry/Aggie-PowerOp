@@ -608,8 +608,14 @@ def find_arduino_port() -> Optional[str]:
     return None
 
 
+# Hardware switch state tracking for delta-detection
+last_arduino_tokens: Optional[List[str]] = None
+last_button_press_time: Dict[int, float] = {}
+
+
 def handle_arduino_serial_line(line: str):
     """Processes a line or token received from the Arduino control panel."""
+    global last_arduino_tokens, last_button_press_time
     line = line.strip()
     if not line:
         return
@@ -622,38 +628,63 @@ def handle_arduino_serial_line(line: str):
     if "," in line or ";" in line or "/" in line:
         tokens = [t.strip().upper() for t in re.split(r'[,;/]+', line) if t.strip()]
         if len(tokens) >= 2:
-            handled_any = False
-            for idx, token in enumerate(tokens):
-                ch = idx + 1
-                st = None
-                if any(k in token for k in ["ON", "HIGH", "1", "TRUE", "CLOSED"]):
-                    st = True
-                elif any(k in token for k in ["OFF", "LOW", "0", "FALSE", "OPEN"]):
-                    st = False
-                
-                if st is not None and ch in BUTTON_MAP:
-                    imp = BUTTON_MAP[ch]
-                    if imp:
-                        cur_val = bool(rig.implements.get(imp, 0))
-                        if cur_val != st:
-                            rig.handle_button_press(ch, explicit_state=st)
-                            logger.info(f"[BUTTON-PANEL] Channel {ch} ({imp}) -> {'ON' if st else 'OFF'} from multi-state '{line}'")
-                            handled_any = True
-            if handled_any:
+            now = time.time()
+            # If this is the first packet received since connection, initialize the baseline
+            if last_arduino_tokens is None:
+                # If all tokens are identical (e.g. all "ON" or all "OFF"), this is the idle baseline
+                if len(set(tokens)) <= 1:
+                    last_arduino_tokens = tokens[:]
+                    logger.info(f"[BUTTON-PANEL] Hardware baseline initialized (quiescent): {last_arduino_tokens}")
+                    return
+                else:
+                    # One or more channels are already toggled relative to the rest;
+                    # infer the baseline from the majority token so the active button press triggers
+                    from collections import Counter
+                    majority_val = Counter(tokens).most_common(1)[0][0]
+                    last_arduino_tokens = [majority_val] * len(tokens)
+                    logger.info(f"[BUTTON-PANEL] Hardware baseline inferred as: {last_arduino_tokens}")
+
+            # HARDWARE DELTA DETECTION:
+            # ONLY identify channels where the physical Arduino state changed from the previous hardware report!
+            # Never compare against software state (cur_val), which prevents other feeders from toggling after phase changes.
+            changed_channels = []
+            for idx in range(min(len(tokens), len(last_arduino_tokens))):
+                if tokens[idx] != last_arduino_tokens[idx]:
+                    ch = idx + 1
+                    # Debounce rapid switch bounce (< 200 ms)
+                    if (now - last_button_press_time.get(ch, 0)) >= 0.20:
+                        changed_channels.append(ch)
+                        last_button_press_time[ch] = now
+
+            # Always update hardware state history with the latest reading
+            last_arduino_tokens = tokens[:]
+
+            if not changed_channels:
+                logger.debug(f"[BUTTON-PANEL] Duplicate multi-state received, no change: {tokens}")
                 return
+
+            for ch in changed_channels:
+                if ch in BUTTON_MAP and BUTTON_MAP[ch] is not None:
+                    imp = BUTTON_MAP[ch]
+                    rig.handle_button_press(ch)
+                    logger.info(f"[BUTTON-PANEL] Channel {ch} ({imp}) toggled via hardware state transition (now {tokens[ch-1]})")
+            return
 
     parsed = parse_button_event(line)
     if parsed:
         ch, explicit_state = parsed
-        imp = rig.handle_button_press(ch, explicit_state)
-        logger.info(f"[BUTTON-PANEL] Hardware Button {ch} -> {imp} (raw: '{line}')")
-        global serial_conn
-        if serial_conn:
-            try:
-                serial_conn.write(f"T{ch}\n".encode("utf-8"))
-                serial_conn.flush()
-            except Exception:
-                pass
+        now = time.time()
+        if (now - last_button_press_time.get(ch, 0)) >= 0.20:
+            last_button_press_time[ch] = now
+            imp = rig.handle_button_press(ch, explicit_state)
+            logger.info(f"[BUTTON-PANEL] Hardware Button {ch} -> {imp} (raw: '{line}')")
+            global serial_conn
+            if serial_conn:
+                try:
+                    serial_conn.write(f"T{ch}\n".encode("utf-8"))
+                    serial_conn.flush()
+                except Exception:
+                    pass
     elif line.startswith("{") and line.endswith("}"):
         try:
             data = json.loads(line)
@@ -674,8 +705,9 @@ def serial_thread_worker(port: Optional[str], baud: int):
     Handles \\r, \\n, \\r\\n, and bare character pulses without newline.
     """
     import serial
-    global serial_conn
+    global serial_conn, last_arduino_tokens
     rig.hardware_connected = False
+    last_arduino_tokens = None
 
     while True:
         target_port = port
@@ -684,6 +716,7 @@ def serial_thread_worker(port: Optional[str], baud: int):
 
         if not target_port:
             rig.hardware_connected = False
+            last_arduino_tokens = None
             time.sleep(2.0)
             continue
 
@@ -702,6 +735,7 @@ def serial_thread_worker(port: Optional[str], baud: int):
             serial_conn = s
             rig.hardware_connected = True
             rig.mock_mode = False
+            last_arduino_tokens = None  # Reset baseline on fresh connection
             rig.add_event("HARDWARE", f"Arduino Control Panel online on {target_port} ({baud} baud).", "success")
             logger.info(f"Arduino Control Panel online on {target_port}. Ready for buttons on pins 2-5...")
 
@@ -744,6 +778,7 @@ def serial_thread_worker(port: Optional[str], baud: int):
 
         except Exception as e:
             rig.hardware_connected = False
+            last_arduino_tokens = None
             if s:
                 try:
                     s.close()

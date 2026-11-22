@@ -161,6 +161,9 @@ def main() -> None:
     t.start()
 
     rx_buf = ""
+    last_button_tokens = None
+    last_press_time = {}
+
     try:
         while True:
             if ser and ser.is_open:
@@ -186,30 +189,48 @@ def main() -> None:
                             if "," in line or ";" in line or "/" in line:
                                 tokens = [t.strip().upper() for t in re.split(r'[,;/]+', line) if t.strip()]
                                 if len(tokens) >= 2:
-                                    print(f"[ARDUINO MULTI-STATE] {line}")
-                                    for idx, token in enumerate(tokens):
-                                        ch = idx + 1
-                                        st = None
-                                        if any(k in token for k in ["ON", "HIGH", "1", "TRUE"]):
-                                            st = True
-                                        elif any(k in token for k in ["OFF", "LOW", "0", "FALSE"]):
-                                            st = False
-                                        if st is not None and ch in BUTTON_MAPPING:
+                                    now = time.time()
+                                    if last_button_tokens is None:
+                                        if len(set(tokens)) <= 1:
+                                            last_button_tokens = tokens[:]
+                                            print(f"[STATUS] Hardware baseline initialized: {last_button_tokens}")
+                                            continue
+                                        else:
+                                            from collections import Counter
+                                            maj = Counter(tokens).most_common(1)[0][0]
+                                            last_button_tokens = [maj] * len(tokens)
+
+                                    changed = []
+                                    for idx in range(min(len(tokens), len(last_button_tokens))):
+                                        if tokens[idx] != last_button_tokens[idx]:
+                                            ch = idx + 1
+                                            if (now - last_press_time.get(ch, 0)) >= 0.20:
+                                                changed.append(ch)
+                                                last_press_time[ch] = now
+
+                                    last_button_tokens = tokens[:]
+
+                                    for ch in changed:
+                                        if ch in BUTTON_MAPPING:
                                             info = BUTTON_MAPPING[ch]
                                             name = info.get("name")
-                                            if name:
-                                                print(f"  -> Channel {ch} ({name}) = {'ON' if st else 'OFF'}")
-                                                send_to_scada(ch, st)
+                                            imp = info.get("implement")
+                                            if imp:
+                                                print(f"  -> Hardware Button {ch} ({name}) toggling {imp}")
+                                                send_to_scada(ch)
                                     continue
 
                             parsed = parse_button_event(line)
                             if parsed:
                                 ch, st = parsed
-                                info = BUTTON_MAPPING.get(ch, {})
-                                name = info.get("name", f"Channel {ch}")
-                                state_str = f" ({'ON' if st else 'OFF'})" if st is not None else " [TOGGLE]"
-                                print(f"[ARDUINO EVENT] Button {ch} -> {name}{state_str} (raw: '{line}')")
-                                send_to_scada(ch, st)
+                                now = time.time()
+                                if (now - last_press_time.get(ch, 0)) >= 0.20:
+                                    last_press_time[ch] = now
+                                    info = BUTTON_MAPPING.get(ch, {})
+                                    name = info.get("name", f"Channel {ch}")
+                                    state_str = f" ({'ON' if st else 'OFF'})" if st is not None else " [TOGGLE]"
+                                    print(f"[ARDUINO EVENT] Button {ch} -> {name}{state_str} (raw: '{line}')")
+                                    send_to_scada(ch, st)
                             else:
                                 print(f"[ARDUINO RAW] {line}")
                     if len(rx_buf) in [1, 2]:
@@ -218,9 +239,12 @@ def main() -> None:
                             parsed = parse_button_event(stripped)
                             if parsed:
                                 ch, st = parsed
-                                info = BUTTON_MAPPING.get(ch, {})
-                                print(f"[ARDUINO EVENT] Pulse {ch} -> {info.get('name')}")
-                                send_to_scada(ch, st)
+                                now = time.time()
+                                if (now - last_press_time.get(ch, 0)) >= 0.20:
+                                    last_press_time[ch] = now
+                                    info = BUTTON_MAPPING.get(ch, {})
+                                    print(f"[ARDUINO EVENT] Pulse {ch} -> {info.get('name')}")
+                                    send_to_scada(ch, st)
                             rx_buf = ""
             else:
                 time.sleep(0.1)

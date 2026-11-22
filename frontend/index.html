@@ -309,9 +309,16 @@
       <!-- LEFT: 5 FEEDER BAYS (7 Cols) -->
       <div class="lg:col-span-7 flex flex-col gap-3">
         
-        <div class="flex items-center justify-between px-1">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-1">
           <div class="flex items-center gap-2">
             <h2 class="text-xs uppercase tracking-wider font-bold text-slate-700">Subsystems & Motor Control Center</h2>
+          </div>
+          <!-- Breadboard Hardware Light Key -->
+          <div class="flex items-center gap-2.5 text-[11px] font-mono bg-white px-2.5 py-1 rounded border border-slate-300 shadow-sm">
+            <span class="font-bold text-slate-500">BREADBOARD LIGHTS:</span>
+            <span class="inline-flex items-center gap-1 font-semibold text-slate-800"><span class="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]"></span>Shaker (Red)</span>
+            <span class="inline-flex items-center gap-1 font-semibold text-slate-800"><span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.8)]"></span>Lighting (Green)</span>
+            <span class="inline-flex items-center gap-1 font-semibold text-slate-800"><span class="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_4px_rgba(59,130,246,0.8)]"></span>Blower (Blue)</span>
           </div>
         </div>
 
@@ -399,10 +406,17 @@
               <div class="flex items-start justify-between">
                 <div>
                   <div class="flex items-center gap-1.5 mb-1">
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300">CONTROL PANEL: BTN 1 (PIN 2)</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-red-50 text-red-800 border border-red-200 flex items-center gap-1.5">
+                      <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                      CONTROL PANEL: BTN 1 (PIN 2)
+                    </span>
                   </div>
-                  <h3 class="text-sm font-bold text-slate-900">Shale Shaker & Mud Agitator</h3>
-                  <p class="text-xs text-slate-500 font-mono">110 kW Mud Solids Control</p>
+                  <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                    <span id="dot-shaker-light" class="inline-block w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-red-200 shrink-0 shadow-[0_0_6px_rgba(239,68,68,0.7)] transition-transform duration-200" title="Hardware Breadboard Indicator: Red Light (Button 1)"></span>
+                    <span>Shale Shaker & Mud Agitator</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-red-100 text-red-700 border border-red-300">RED LIGHT</span>
+                  </h3>
+                  <p class="text-xs text-slate-500 font-mono mt-0.5">110 kW Mud Solids Control</p>
                 </div>
 
                 <div id="shaker-icon" class="px-2 py-1 rounded text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">
@@ -422,7 +436,7 @@
                 <span id="shaker-kw" class="font-bold text-base tabular-nums">--</span> <span class="text-xs text-slate-500">kW</span>
               </div>
               <div class="flex items-center gap-2">
-                <button id="toggle-btn-shaker" onclick="toggleImplement('shaker')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Simulate local crew switch action / Panel Button 1">
+                <button id="toggle-btn-shaker" onclick="toggleImplement('shaker')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Hardware Panel: Button 1 (Red LED) / Shale Shaker">
                   <span id="shaker-status-pill" class="text-xs font-mono">OFF</span>
                   <span id="shaker-toggle-knob" class="w-4 h-2 rounded-full bg-slate-400"></span>
                 </button>
@@ -436,10 +450,17 @@
               <div class="flex items-start justify-between">
                 <div>
                   <div class="flex items-center gap-1.5 mb-1">
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300">CONTROL PANEL: BTN 3 (PIN 4)</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1.5">
+                      <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                      CONTROL PANEL: BTN 3 (PIN 4)
+                    </span>
                   </div>
-                  <h3 class="text-sm font-bold text-slate-900">Ventilation & Motor Blower</h3>
-                  <p class="text-xs text-slate-500 font-mono">85 kW Motor Cooling Blower</p>
+                  <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                    <span id="dot-fan-light" class="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-blue-200 shrink-0 shadow-[0_0_6px_rgba(59,130,246,0.7)] transition-transform duration-200" title="Hardware Breadboard Indicator: Blue Light (Button 3)"></span>
+                    <span>Ventilation & Motor Blower</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-100 text-blue-700 border border-blue-300">BLUE LIGHT</span>
+                  </h3>
+                  <p class="text-xs text-slate-500 font-mono mt-0.5">85 kW Motor Cooling Blower</p>
                 </div>
 
                 <div id="fan-icon" class="px-2 py-1 rounded text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">
@@ -459,7 +480,7 @@
                 <span id="fan-kw" class="font-bold text-base tabular-nums">--</span> <span class="text-xs text-slate-500">kW</span>
               </div>
               <div class="flex items-center gap-2">
-                <button id="toggle-btn-fan" onclick="toggleImplement('fan')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Simulate local crew switch action / Panel Button 3">
+                <button id="toggle-btn-fan" onclick="toggleImplement('fan')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Hardware Panel: Button 3 (Blue LED) / Ventilation">
                   <span id="fan-status-pill" class="text-xs font-mono">OFF</span>
                   <span id="fan-toggle-knob" class="w-4 h-2 rounded-full bg-slate-400"></span>
                 </button>
@@ -473,10 +494,17 @@
               <div class="flex items-start justify-between">
                 <div>
                   <div class="flex items-center gap-1.5 mb-1">
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-100 text-blue-800 border border-blue-300">CONTROL PANEL: BTN 2 (PIN 3)</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      CONTROL PANEL: BTN 2 (PIN 3)
+                    </span>
                   </div>
-                  <h3 class="text-sm font-bold text-slate-900">Rig Lighting & Auxiliary Compressors</h3>
-                  <p class="text-xs text-slate-500 font-mono">60 kW Auxiliary Feeder Bank</p>
+                  <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                    <span id="dot-lights-light" class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-200 shrink-0 shadow-[0_0_6px_rgba(16,185,129,0.7)] transition-transform duration-200" title="Hardware Breadboard Indicator: Green Light (Button 2)"></span>
+                    <span>Rig Lighting & Auxiliary Compressors</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">GREEN LIGHT</span>
+                  </h3>
+                  <p class="text-xs text-slate-500 font-mono mt-0.5">60 kW Auxiliary Feeder Bank</p>
                 </div>
 
                 <div id="lights-icon" class="px-2 py-1 rounded text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">
@@ -496,7 +524,7 @@
                 <span id="lights-kw" class="font-bold text-base tabular-nums">--</span> <span class="text-xs text-slate-500">kW</span>
               </div>
               <div class="flex items-center gap-2">
-                <button id="toggle-btn-lights" onclick="toggleImplement('lights')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Simulate local crew switch action / Panel Button 2">
+                <button id="toggle-btn-lights" onclick="toggleImplement('lights')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Hardware Panel: Button 2 (Green LED) / Rig Lighting">
                   <span id="lights-status-pill" class="text-xs font-mono">OFF</span>
                   <span id="lights-toggle-knob" class="w-4 h-2 rounded-full bg-slate-400"></span>
                 </button>
@@ -506,7 +534,7 @@
 
         </div>
 
-        <!-- TORQUE LOAD SIMULATOR WIDGET -->
+        <!-- DOWNHOLE TORQUE SIMULATOR WIDGET (DISABLED / COMMENTED OUT)
         <div id="torque-widget-card" class="scada-card p-3.5 transition-all">
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
@@ -532,6 +560,7 @@
             <span>1023 ADC (+150 kW)</span>
           </div>
         </div>
+        -->
 
       </div>
 
@@ -584,10 +613,18 @@
     let ws = null;
     let lineChart = null;
     let lastState = null;
+    let prevImpStates = {};
     const maxDataPoints = 30;
     const timeLabels = [];
     const baselineData = [];
     const actualData = [];
+
+    function flashHardwareDot(dotId) {
+      const el = document.getElementById(dotId);
+      if (!el) return;
+      el.classList.add('scale-150', 'brightness-125');
+      setTimeout(() => el.classList.remove('scale-150', 'brightness-125'), 350);
+    }
 
     // Initialize UI on load
     window.addEventListener('DOMContentLoaded', () => {
@@ -715,7 +752,8 @@
     }
 
     function onPotSliderChange(val) {
-      document.getElementById('pot-display').innerText = `ADC: ${val}`;
+      const pd = document.getElementById('pot-display');
+      if (pd) pd.innerText = `ADC: ${val}`;
       sendCommand({ action: 'set_pot', value: parseInt(val) });
     }
 
@@ -949,6 +987,26 @@
         // 5. Equipment Implement Feeder Bays & Dynamic Advisories
         const imps = data.implements || {};
         const advList = data.advisories || [];
+
+        // Flash hardware dots on state transitions (mirrors breadboard LED pulses)
+        if (imps.shaker) {
+          if (prevImpStates.shaker !== undefined && prevImpStates.shaker !== imps.shaker.on) {
+            flashHardwareDot('dot-shaker-light');
+          }
+          prevImpStates.shaker = imps.shaker.on;
+        }
+        if (imps.fan) {
+          if (prevImpStates.fan !== undefined && prevImpStates.fan !== imps.fan.on) {
+            flashHardwareDot('dot-fan-light');
+          }
+          prevImpStates.fan = imps.fan.on;
+        }
+        if (imps.lights) {
+          if (prevImpStates.lights !== undefined && prevImpStates.lights !== imps.lights.on) {
+            flashHardwareDot('dot-lights-light');
+          }
+          prevImpStates.lights = imps.lights.on;
+        }
 
         // Mode Badge
         const modeBadge = document.getElementById('control-mode-badge');
