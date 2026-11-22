@@ -12,7 +12,7 @@ This repository contains the firmware, backend server, and SCADA web dashboard f
 ## 2. Non-Negotiable Engineering & Safety Requirements
 Every code change must preserve these five checkpoint design requirements:
 
-1. **Non-Intrusive Modular Architecture:** Operates as a lightweight software layer over standard telemetry/JSON feeds. Must support a `--mock` hardware mode so the backend and UI can be developed and demonstrated without the Arduino plugged in.
+1. **Non-Intrusive Modular Architecture:** Operates as a lightweight software layer over standard telemetry/JSON feeds and reports live physical Arduino connection state.
 2. **Fail-Safe & Hard Safety Lockouts:**
    - **Tier 1 (`bop`) is permanently locked ON** in both firmware and backend. Software must NEVER allow turning off `bop`.
    - **2000 ms Serial Watchdog:** The backend sends a heartbeat `PING` every `500 ms`. If the Mega 2560 receives no `PING` for `2000 ms` (e.g., USB unplugged or server crash), firmware MUST immediately force all implements **ON**, enter fail-safe mode, and display `FAILSAFE: ALL ON` on the LCD1602.
@@ -53,8 +53,10 @@ Keep the repository flat and hackathon-friendly:
 | **Mud Agitator / Shale Shaker** | **Tier 2 (Auto-Disable)** | SG90 Micro Servo | `9` | Oscillates smoothly when ON; parks at 90° when OFF |
 | **Ventilation / Cooling Blower** | **Tier 3 (Auto-Disable)** | 3–6V DC Motor + L293D / PN2222 | `6` (PWM) | Ramps/runs at PWM duty cycle when ON; `0` when OFF |
 | **Site Lighting / Aux Bank** | **Tier 3 (Auto-Disable)** | 5V Relay Module + LEDs | `7` | Check active-LOW vs active-HIGH relay polarity via a `#define RELAY_ACTIVE_LOW` constant |
-| **Manual Override Button** | Instant Crew Override | Tactile Push Button | `2` | `INPUT_PULLUP` (active LOW, debounced) |
-| **Rig Mode Cycle Button** | Local State Toggle | Tactile Push Button | `3` | `INPUT_PULLUP` (active LOW, debounced) |
+| **Control Panel Channel 1** | FDR-03 solids control | Tactile Push Button / Red LED | `2` | 9600-baud panel; maps to `shaker` |
+| **Control Panel Channel 2** | FDR-05 utility auxiliary | Tactile Push Button / Green LED | `3` | 9600-baud panel; maps to `lights` |
+| **Control Panel Channel 3** | FDR-04 cooling/HVAC | Tactile Push Button / Blue LED | `4` | 9600-baud panel; maps to `fan` |
+| **Control Panel Channel 4** | Unassigned | Tactile Push Button | `5` | Skipped; do not remap |
 | **Torque / Load Simulator** | Analog Load Input | 10k$\Omega$ Potentiometer | `A0` | `0–1023` mapped to simulated torque load & spike trigger |
 | **Doghouse Display** | Local Rig Status | LCD1602 (4-bit parallel) | `40, 41, 42, 43, 44, 45` | `RS=40, EN=41, D4=42, D5=43, D6=44, D7=45` |
 
@@ -98,16 +100,24 @@ All messages between `backend/server.py` and `firmware/micro_rig/micro_rig.ino` 
 ## 6. Digital Twin Power & Emissions Model (`backend/server.py`)
 Map each implement's physical ON/OFF state to realistic scaled onshore land-rig power ratings:
 
-| Key | Display Name | Tier | Rated Power (kW) | Behavior in `IDLE_STANDBY` (Auto-Saver ON) |
-| :--- | :--- | :---: | :---: | :--- |
-| `bop` | Well Control / BOP & Monitoring | Tier 1 | `35` | **Locked ON** (Never disabled) |
-| `rotary` | Rotary Drive / Top Drive | Primary | `420` | OFF during `PIPE_CONNECTION` / `IDLE_STANDBY` |
-| `shaker` | Mud Agitator / Shale Shaker | Tier 2 | `110` | Auto-disabled after 3 s idle confirmation |
-| `fan` | Ventilation / Cooling Blower | Tier 3 | `85` | Auto-disabled after 3 s idle confirmation |
-| `lights` | Site Lighting / Aux Compressors | Tier 3 | `60` | Auto-disabled after 3 s idle confirmation |
+| Key | Display Name | Tier | Nameplate (kW) | Nominal Draw (kW) | `IDLE_STANDBY` Advisory |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| `bop` | Well Control, BOP & Safety Controls | Tier 1 | `40` | `20` | **Locked ON** (Never disabled) |
+| `rotary` | Top Drive System (Primary Rotary) | Primary | `2400` | `2000` + `0–500` torque | OFF outside active drilling; flag if unexpectedly ON |
+| `shaker` | Solids Control & Mud Mixing Package | Tier 2 | `240` | `215` | Flag during tripping and extended standby |
+| `fan` | VFD House HVAC & Cooling Blowers | Tier 3 | `180` | `145` | Retain during tripping; flag only during extended standby |
+| `lights` | Lighting, Air Compressors & Utility Aux | Tier 3 | `140` | `120` | Flag during connection, tripping, and standby |
+
+The monitored rig distribution system has **3,000 kW (3.0 MW) connected nameplate capacity** and **2,500 kW (~2.5 MW) nominal active-drilling draw** at zero torque overlay, matching presentation phase benchmarks:
+- **Active Drilling:** 2.0–3.0 MW (~2,500 kW nominal, scaling to 3,000 kW under torque load)
+- **Tripping Pipe:** 0.3–1.5 MW (500 kW baseline auxiliary, peaking to ~2,000 kW on drawworks hoist)
+- **Pipe Connection:** 0.3–0.7 MW (~500 kW baseline auxiliary)
+- **Idle / Standby:** 0.4–0.6 MW (~500 kW unoptimized baseline with Tier 2/3 running; drops to 20 kW when optimized, saving 480 kW)
+
+Phase advisory totals are 120 kW for `PIPE_CONNECTION`, 335 kW for `TRIPPING`, and 480 kW for `IDLE_STANDBY`.
 
 ### Calculations
-- **Dynamic Torque Load:** Scale `pot_raw` (`0–1023`) to add `0–150 kW` of variable rotary/downhole torque load when `rotary == 1`. If `pot_raw > 850`, flag a `"TORQUE_SPIKE"` alert.
+- **Dynamic Torque Load:** Scale `pot_raw` (`0–1023`) to add `0–500 kW` of variable rotary/downhole torque load when `rotary == 1`. If `pot_raw > 850`, flag a `"TORQUE_SPIKE"` alert.
 - **Baseline Power ($P_{\text{base}}$):** Sum of all implements running continuously (traditional unoptimized rig where Tier 2 & 3 stay ON during idle).
 - **Actual Power ($P_{\text{actual}}$):** Sum of currently energized implements + dynamic torque load.
 - **Power Saved:** $P_{\text{saved}} = \max(0, P_{\text{base}} - P_{\text{actual}})$ (kW).
@@ -129,7 +139,7 @@ Support four selectable states:
 - **Single-File / Zero Build Step:** Use vanilla HTML/CSS/JS with lightweight CDN libraries (e.g., Tailwind CSS CDN + Chart.js or Plotly CDN) served directly by FastAPI so it runs reliably without complex Node toolchains.
 - **iPad Safari Compatibility:** Must be touch-friendly (large buttons, `min-height: 44px`), responsive on tablet viewports, and automatically connect WebSockets using `window.location.host` (never hardcode `localhost`).
 - **Required UI Panels:**
-  1. **Top KPI Bar:** Live Power (kW), Power Saved (kW & %), Est. Diesel/Cost Saved (\$/shift), $\text{CO}_2$ Avoided (kg/shift), and live Hardware/Watchdog Heartbeat indicator (`ONLINE`, `MOCK`, or `FAILSAFE`).
+  1. **Top KPI Bar:** Live Power (kW), Power Saved (kW & %), Est. Diesel/Cost Saved (\$/shift), $\text{CO}_2$ Avoided (kg/shift), and live Hardware/Watchdog Heartbeat indicator (`ONLINE`, `WAITING FOR ARDUINO`, or `FAILSAFE`).
   2. **Operations Control Bar:** Rig State buttons (`Active Drilling`, `Pipe Connection`, `Tripping`, `Idle Standby`), **Auto-Saver Toggle**, and a high-contrast red **`MANUAL OVERRIDE`** button.
   3. **Equipment Cards (5 implements):** Show Tier badge (`TIER 1 LOCKED`, `PRIMARY`, `TIER 2`, `TIER 3`), live kW draw, animated ON/OFF status, and manual toggle switch (`bop` visually padlocked and disabled).
   4. **Visualizations:**
@@ -147,15 +157,11 @@ cd backend
 pip install -r requirements.txt
 ```
 
-### Run in Mock Mode (No Arduino Required)
+### Run with the 9600-Baud Arduino Control Panel Connected
 ```bash
-python server.py --mock
-```
-
-### Run with Elegoo Mega 2560 Connected
-```bash
-# Replace COM3 / /dev/ttyACM0 with the actual Arduino serial port
-python server.py --port /dev/ttyACM0
+python backend/server.py
+# Or select the serial port explicitly:
+python backend/server.py --port COM4
 ```
 
 ### Accessing from iPads

@@ -7,10 +7,8 @@ import argparse
 import asyncio
 import json
 import logging
-import math
 import os
 import re
-import sys
 import threading
 import time
 from collections import deque
@@ -31,14 +29,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("RigServer")
 
-# Equipment Power Ratings (kW)
-RATINGS = {
-    "bop": 35.0,        # Tier 1 (Well Control / BOP & Monitoring - LOCKED ON)
-    "rotary": 420.0,    # Primary Process Load (Top Drive / Drill String)
-    "shaker": 110.0,    # Tier 2 (Mud Agitator / Shale Shaker)
-    "fan": 85.0,        # Tier 3 (Ventilation / Cooling Blower)
-    "lights": 60.0,     # Tier 3 (Site Lighting / Aux Compressors)
+# Monitored Rig Power Distribution Nameplate Capacity (kW) — 3.0 MW Total Rated
+RATED_CAPACITY_KW: Dict[str, float] = {
+    "bop": 40.0,
+    "rotary": 2400.0,
+    "shaker": 240.0,
+    "fan": 180.0,
+    "lights": 140.0,
 }
+
+# Nominal Continuous Operating Draw when Energized (kW)
+NOMINAL_LOAD_KW: Dict[str, float] = {
+    "bop": 20.0,
+    "rotary": 2000.0,
+    "shaker": 215.0,
+    "fan": 145.0,
+    "lights": 120.0,
+}
+
+# Backward-compatible alias for existing integrations.
+RATINGS = NOMINAL_LOAD_KW
+CONNECTED_CAPACITY_KW: float = sum(RATED_CAPACITY_KW.values())
 
 # Environmental / Economic Multipliers
 DIESEL_PER_KWH = 0.26       # L / kWh
@@ -63,11 +74,24 @@ BUTTON_MAP: Dict[int, Optional[str]] = {
 }
 
 IMPLEMENT_NAMES: Dict[str, str] = {
-    "rotary": "Top Drive / Rotary Table",
-    "shaker": "Shale Shaker & Agitator",
-    "fan": "Ventilation & Motor Blower",
-    "lights": "Rig Lighting & Aux Bank",
-    "bop": "Well Control / BOP Stack",
+    "bop": "Well Control, BOP & Safety Controls",
+    "rotary": "Top Drive System (Primary Rotary)",
+    "shaker": "Solids Control & Mud Mixing Package",
+    "fan": "VFD House HVAC & Cooling Blowers",
+    "lights": "Lighting, Air Compressors & Utility Aux",
+}
+
+IMPLEMENT_SUBTITLES: Dict[str, str] = {
+    "bop": "40 kW Rated · Accumulator Standby & Gas Detection",
+    "rotary": "2,400 kW AC Top Drive Motor (2.4 MW)",
+    "shaker": "240 kW Rated · Shakers, Agitators & Centrifuge",
+    "fan": "180 kW Rated · PCR/VFD Cooling & Motor Blowers",
+    "lights": "140 kW Rated · Yard Lighting, Compressors & Utility Aux",
+}
+
+IMPLEMENT_FEEDERS: Dict[str, str] = {
+    "bop": "FDR-01", "rotary": "FDR-02", "shaker": "FDR-03",
+    "fan": "FDR-04", "lights": "FDR-05",
 }
 
 
@@ -172,7 +196,6 @@ class DigitalTwinRig:
     def __init__(self):
         # Operational mode (Decision Support / Advisory System)
         self.rig_state: str = "ACTIVE_DRILLING"
-        self.mock_mode: bool = True
         self.hardware_connected: bool = False
 
         # Equipment On/Off states (1 = ON, 0 = OFF)
@@ -185,8 +208,8 @@ class DigitalTwinRig:
         }
 
         # Sensor inputs
-        self.pot_raw: int = 400
-        self.pre_spike_pot: int = 400
+        self.pot_raw: int = 0
+        self.pre_spike_pot: int = 0
         self.torque_spike: bool = False
         self.simulated_spike_end_time: float = 0.0
         self.manual_override: bool = False
@@ -194,10 +217,12 @@ class DigitalTwinRig:
         self.auto_saver_active: bool = False
 
         # Energy & Emissions Metrics
-        self.base_kw: float = 710.0
-        self.actual_kw: float = 710.0
+        self.base_kw: float = sum(NOMINAL_LOAD_KW.values())
+        self.actual_kw: float = sum(NOMINAL_LOAD_KW.values())
         self.saved_kw: float = 0.0
         self.dynamic_torque_kw: float = 0.0
+        self.overload_active: bool = False
+        self.high_load_warning: bool = False
 
         # Cumulative counters
         self.last_update_time: float = time.time()
@@ -222,111 +247,43 @@ class DigitalTwinRig:
         logger.info(f"[{category}] {message}")
 
     def get_advisories(self) -> List[Dict]:
-        """Evaluates running equipment against the current rig phase to identify avoidable idle waste."""
-        advisories = []
-        is_idle = (self.rig_state == "IDLE_STANDBY")
-        is_tripping = (self.rig_state == "TRIPPING")
-        is_connection = (self.rig_state == "PIPE_CONNECTION")
+        """Identify energized loads that are unnecessary in the current rig phase."""
+        phase_rules = {
+            "IDLE_STANDBY": {
+                "shaker": ("Mud circulation suspended during extended standby", "Suggest local crew power down Feeder 03"),
+                "fan": ("Post-cooldown blowers & non-essential VFD HVAC idle in standby", "Suggest local crew power down Feeder 04"),
+                "lights": ("Non-essential daytime yard lighting & idle utility compressors running", "Suggest local crew power down Feeder 05 (Tier-1 floor lighting retained)"),
+            },
+            "TRIPPING": {
+                "shaker": ("Mud circulation halted while tripping pipe", "Suggest local crew power down Feeder 03"),
+                "lights": ("Non-essential yard lighting & idle utility compressors active during trip", "Suggest local crew power down Feeder 05"),
+            },
+            "PIPE_CONNECTION": {
+                "lights": ("Idle utility compressors & non-essential yard lighting active during connection", "Suggest local crew shed non-essential Feeder 05 circuits"),
+            },
+        }
+        rules = dict(phase_rules.get(self.rig_state, {}))
+        if self.rig_state != "ACTIVE_DRILLING":
+            rules["rotary"] = (
+                f"Top drive energized while rig is in {self.rig_state}",
+                "Isolate rotary drive Feeder 02",
+            )
 
-        if is_idle:
-            if self.implements.get("shaker", 0):
-                cost_hr = round(RATINGS["shaker"] * DIESEL_PER_KWH * COST_PER_LITER, 2)
-                advisories.append({
-                    "implement": "shaker",
-                    "feeder": "FDR-03",
-                    "name": "Shale Shaker & Agitator",
-                    "title": "Shale Shaker & Agitator",
-                    "reason": "Mud circulation suspended during standby",
-                    "suggestion": "Suggest local crew power down Feeder 03",
-                    "savings_kw": RATINGS["shaker"],
-                    "cost_hr": cost_hr
-                })
-            if self.implements.get("fan", 0):
-                cost_hr = round(RATINGS["fan"] * DIESEL_PER_KWH * COST_PER_LITER, 2)
-                advisories.append({
-                    "implement": "fan",
-                    "feeder": "FDR-04",
-                    "name": "Ventilation Blower",
-                    "title": "Ventilation Blower",
-                    "reason": "Drive motors inactive during standby",
-                    "suggestion": "Suggest local crew power down Feeder 04",
-                    "savings_kw": RATINGS["fan"],
-                    "cost_hr": cost_hr
-                })
-            if self.implements.get("lights", 0):
-                cost_hr = round(RATINGS["lights"] * DIESEL_PER_KWH * COST_PER_LITER, 2)
-                advisories.append({
-                    "implement": "lights",
-                    "feeder": "FDR-05",
-                    "name": "Rig Lighting & Aux Bank",
-                    "title": "Rig Lighting & Aux Bank",
-                    "reason": "Non-essential auxiliary loads active in standby",
-                    "suggestion": "Suggest local crew power down Feeder 05",
-                    "savings_kw": RATINGS["lights"],
-                    "cost_hr": cost_hr
-                })
-            if self.implements.get("rotary", 0):
-                cost_hr = round(RATINGS["rotary"] * DIESEL_PER_KWH * COST_PER_LITER, 2)
-                advisories.append({
-                    "implement": "rotary",
-                    "feeder": "FDR-02",
-                    "name": "Rotary / Top Drive",
-                    "title": "Rotary / Top Drive",
-                    "reason": "Top drive energized while rig is in IDLE_STANDBY",
-                    "suggestion": "Isolate rotary drive Feeder 02 immediately",
-                    "savings_kw": RATINGS["rotary"],
-                    "cost_hr": cost_hr
-                })
-        elif is_tripping:
-            if self.implements.get("fan", 0):
-                cost_hr = round(RATINGS["fan"] * DIESEL_PER_KWH * COST_PER_LITER, 2)
-                advisories.append({
-                    "implement": "fan",
-                    "feeder": "FDR-04",
-                    "name": "Ventilation Blower",
-                    "title": "Ventilation Blower",
-                    "reason": "Motors not under heavy drilling load during pipe tripping",
-                    "suggestion": "Suggest local crew power down Feeder 04",
-                    "savings_kw": RATINGS["fan"],
-                    "cost_hr": cost_hr
-                })
-            if self.implements.get("lights", 0):
-                cost_hr = round(RATINGS["lights"] * DIESEL_PER_KWH * COST_PER_LITER, 2)
-                advisories.append({
-                    "implement": "lights",
-                    "feeder": "FDR-05",
-                    "name": "Auxiliary Compressors",
-                    "title": "Auxiliary Compressors",
-                    "reason": "Auxiliary compressor load running during pipe handling",
-                    "suggestion": "Suggest local crew power down Feeder 05",
-                    "savings_kw": RATINGS["lights"],
-                    "cost_hr": cost_hr
-                })
-            if self.implements.get("rotary", 0):
-                cost_hr = round(RATINGS["rotary"] * DIESEL_PER_KWH * COST_PER_LITER, 2)
-                advisories.append({
-                    "implement": "rotary",
-                    "feeder": "FDR-02",
-                    "name": "Rotary Drive",
-                    "title": "Rotary Drive",
-                    "reason": "Rotary drive should remain parked while tripping pipe",
-                    "suggestion": "Isolate rotary drive Feeder 02",
-                    "savings_kw": RATINGS["rotary"],
-                    "cost_hr": cost_hr
-                })
-        elif is_connection:
-            if self.implements.get("rotary", 0):
-                cost_hr = round(RATINGS["rotary"] * DIESEL_PER_KWH * COST_PER_LITER, 2)
-                advisories.append({
-                    "implement": "rotary",
-                    "feeder": "FDR-02",
-                    "name": "Rotary Drive",
-                    "title": "Rotary Drive",
-                    "reason": "Top drive energized while making pipe connection",
-                    "suggestion": "Park rotary drive Feeder 02 during connection",
-                    "savings_kw": RATINGS["rotary"],
-                    "cost_hr": cost_hr
-                })
+        advisories = []
+        for implement, (reason, suggestion) in rules.items():
+            if not self.implements.get(implement, 0):
+                continue
+            savings_kw = NOMINAL_LOAD_KW[implement]
+            advisories.append({
+                "implement": implement,
+                "feeder": IMPLEMENT_FEEDERS[implement],
+                "name": IMPLEMENT_NAMES[implement],
+                "title": IMPLEMENT_NAMES[implement],
+                "reason": reason,
+                "suggestion": suggestion,
+                "savings_kw": savings_kw,
+                "cost_hr": round(savings_kw * DIESEL_PER_KWH * COST_PER_LITER, 2),
+            })
         return advisories
 
     def set_rig_state(self, new_state: str):
@@ -352,13 +309,6 @@ class DigitalTwinRig:
                 self.implements["shaker"] = 1 if is_token_active(last_arduino_tokens[0]) else 0
                 self.implements["lights"] = 1 if is_token_active(last_arduino_tokens[1]) else 0
                 self.implements["fan"] = 1 if is_token_active(last_arduino_tokens[2]) else 0
-            elif not self.hardware_connected:
-                # Pure mock mode without Arduino: default auxiliary loads to ON when entering a phase
-                # so advisories can be demonstrated
-                if new_state == "ACTIVE_DRILLING":
-                    self.implements["shaker"] = 1
-                    self.implements["fan"] = 1
-                    self.implements["lights"] = 1
 
             # When entering IDLE_STANDBY or TRIPPING, check for any active unnecessary loads
             adv = self.get_advisories()
@@ -381,13 +331,13 @@ class DigitalTwinRig:
             state_label = "ENERGIZED" if val else "DE-ENERGIZED"
             
             # If crew turned off a load during standby, log compliance
-            if not val and (self.rig_state in ["IDLE_STANDBY", "TRIPPING"]):
+            if not val and self.rig_state in ["IDLE_STANDBY", "TRIPPING", "PIPE_CONNECTION"]:
                 self.add_event("CREW-ACTION", f"Crew powered down {implement.upper()} locally ({RATINGS[implement]} kW avoided waste).", "success")
             else:
                 self.add_event("SIMULATION", f"{implement.upper()} locally switched to {state_label} ({RATINGS[implement]} kW).", "info")
 
     def handle_button_press(self, channel: int, explicit_state: Optional[bool] = None) -> Optional[str]:
-        """Handles physical or mock button press from the 4-channel button control panel."""
+        """Handles physical button press from the Arduino control panel."""
         if channel not in BUTTON_MAP or BUTTON_MAP[channel] is None:
             self.add_event("PANEL", f"Hardware Button {channel} pressed (Channel {channel} is unassigned/skipped).", "info")
             return None
@@ -410,16 +360,18 @@ class DigitalTwinRig:
         self.add_event("SCENARIO", "Unmanaged Rig Simulated: All auxiliary loads left running in standby.", "warning")
 
     def simulate_crew_compliance(self):
-        """Simulates field crew complying with all advisory recommendations."""
-        if self.rig_state == "IDLE_STANDBY":
-            self.implements["shaker"] = 0
-            self.implements["fan"] = 0
-            self.implements["lights"] = 0
-            self.add_event("COMPLIANCE", "Crew complied with advisories: All idle auxiliary loads shut down (255 kW saved).", "success")
-        elif self.rig_state == "TRIPPING":
-            self.implements["fan"] = 0
-            self.implements["lights"] = 0
-            self.add_event("COMPLIANCE", "Crew complied with advisories: Tripping auxiliary loads shut down (145 kW saved).", "success")
+        """Simulates field crew complying with every current advisory."""
+        advisories = [a for a in self.get_advisories() if a["implement"] != "bop"]
+        if not advisories:
+            return
+        total_kw = sum(a["savings_kw"] for a in advisories)
+        for advisory in advisories:
+            self.implements[advisory["implement"]] = 0
+        self.add_event(
+            "COMPLIANCE",
+            f"Crew complied with {len(advisories)} advisories: recommended loads shut down ({total_kw:.0f} kW saved).",
+            "success",
+        )
 
     def set_manual_override(self, active: bool):
         self.manual_override = active
@@ -477,41 +429,44 @@ class DigitalTwinRig:
         dt = now - self.last_update_time
         self.last_update_time = now
 
-        # If simulated spike duration has expired, restore normal reading
+        # Defense in depth: Tier-1 well control can never be de-energized.
+        self.implements["bop"] = 1
+
         if self.simulated_spike_end_time > 0 and now >= self.simulated_spike_end_time:
             self.simulated_spike_end_time = 0.0
-            normal_pot = getattr(self, "pre_spike_pot", 400)
-            self.update_sensors(normal_pot)
+            self.update_sensors(getattr(self, "pre_spike_pot", 0))
 
-        # Calculate Dynamic Torque Load (0 to 150 kW)
-        if self.implements["rotary"] == 1:
-            self.dynamic_torque_kw = (self.pot_raw / 1023.0) * 150.0
-        else:
-            self.dynamic_torque_kw = 0.0
+        self.dynamic_torque_kw = (
+            (self.pot_raw / 1023.0) * 500.0 if self.implements["rotary"] else 0.0
+        )
 
-        # Baseline Power Calculation:
-        # Traditional unoptimized rig leaves auxiliary Tier 2 & 3 running constantly during all operations.
-        # Rotary is ON only during Active Drilling in both.
-        base_rotary = RATINGS["rotary"] + self.dynamic_torque_kw if self.rig_state == "ACTIVE_DRILLING" else 0.0
-        self.base_kw = RATINGS["bop"] + base_rotary + RATINGS["shaker"] + RATINGS["fan"] + RATINGS["lights"]
+        base_rotary = (
+            NOMINAL_LOAD_KW["rotary"] + self.dynamic_torque_kw
+            if self.rig_state == "ACTIVE_DRILLING" else 0.0
+        )
+        self.base_kw = (
+            NOMINAL_LOAD_KW["bop"] + base_rotary + NOMINAL_LOAD_KW["shaker"]
+            + NOMINAL_LOAD_KW["fan"] + NOMINAL_LOAD_KW["lights"]
+        )
 
-        # Actual Power Calculation based on current switch states:
-        actual_power = 0.0
-        for key, is_on in self.implements.items():
-            if is_on:
-                actual_power += RATINGS[key]
-        if self.implements["rotary"] == 1:
-            actual_power += self.dynamic_torque_kw
-        self.actual_kw = actual_power
-
-        # Avoided Waste / Power Saved by following advisories
+        feeder_kw = {
+            key: (NOMINAL_LOAD_KW[key] if is_on else 0.0)
+            for key, is_on in self.implements.items()
+        }
+        feeder_kw["rotary"] += self.dynamic_torque_kw
+        self.actual_kw = sum(feeder_kw.values())
         self.saved_kw = max(0.0, self.base_kw - self.actual_kw)
 
-        # Integrate cumulative metrics over dt
+        any_feeder_overloaded = any(
+            feeder_kw[key] > RATED_CAPACITY_KW[key] for key in feeder_kw
+        )
+        self.overload_active = self.actual_kw > CONNECTED_CAPACITY_KW or any_feeder_overloaded
+        utilization_pct = (self.actual_kw / CONNECTED_CAPACITY_KW) * 100.0
+        self.high_load_warning = utilization_pct >= 85.0 or self.torque_spike
+
         hours = dt / 3600.0
         kwh_delta = self.saved_kw * hours
         self.kwh_saved_total += kwh_delta
-
         diesel_delta = kwh_delta * DIESEL_PER_KWH
         self.diesel_saved_l += diesel_delta
         self.cost_saved_usd += diesel_delta * COST_PER_LITER
@@ -520,24 +475,35 @@ class DigitalTwinRig:
     def get_telemetry_dict(self) -> dict:
         saved_pct = (self.saved_kw / self.base_kw * 100.0) if self.base_kw > 0 else 0.0
         advisories = self.get_advisories()
+        tiers = {
+            "bop": "Tier 1 (Locked ON)", "rotary": "Primary Process",
+            "shaker": "Tier 2 (Auxiliary)", "fan": "Tier 3 (Auxiliary)",
+            "lights": "Tier 3 (Auxiliary)",
+        }
+        implements = {}
+        for key, is_on in self.implements.items():
+            kw = NOMINAL_LOAD_KW[key] if is_on else 0.0
+            if key == "rotary" and is_on:
+                kw += self.dynamic_torque_kw
+            implements[key] = {
+                "on": bool(is_on), "kw": round(kw, 1),
+                "kw_rated": RATED_CAPACITY_KW[key], "tier": tiers[key],
+                "name": IMPLEMENT_NAMES[key], "subtitle": IMPLEMENT_SUBTITLES[key],
+                "feeder": IMPLEMENT_FEEDERS[key],
+                "overloaded": kw > RATED_CAPACITY_KW[key],
+            }
+        utilization_pct = (self.actual_kw / CONNECTED_CAPACITY_KW) * 100.0
         return {
             "rig_state": self.rig_state,
-            "mock_mode": self.mock_mode,
             "hardware_connected": self.hardware_connected,
-            "auto_saver": getattr(self, "auto_saver_active", False),
-            "manual_override": getattr(self, "manual_override", False),
-            "failsafe": getattr(self, "failsafe", False),
+            "auto_saver": self.auto_saver_active,
+            "manual_override": self.manual_override,
+            "failsafe": self.failsafe,
             "advisories": advisories,
             "advisory_count": len(advisories),
             "unnecessary_kw": sum(a["savings_kw"] for a in advisories),
             "glitch_filter": {"active": False, "remaining_sec": 0.0, "passed": True},
-            "implements": {
-                "bop": {"on": bool(self.implements["bop"]), "kw": RATINGS["bop"], "tier": "Tier 1 (Locked ON)"},
-                "rotary": {"on": bool(self.implements["rotary"]), "kw": round(RATINGS["rotary"] + self.dynamic_torque_kw if self.implements["rotary"] else 0.0, 1), "tier": "Primary Process"},
-                "shaker": {"on": bool(self.implements["shaker"]), "kw": RATINGS["shaker"] if self.implements["shaker"] else 0.0, "tier": "Tier 2 (Auxiliary)"},
-                "fan": {"on": bool(self.implements["fan"]), "kw": RATINGS["fan"] if self.implements["fan"] else 0.0, "tier": "Tier 3 (Auxiliary)"},
-                "lights": {"on": bool(self.implements["lights"]), "kw": RATINGS["lights"] if self.implements["lights"] else 0.0, "tier": "Tier 3 (Auxiliary)"},
-            },
+            "implements": implements,
             "pot_raw": self.pot_raw,
             "torque_spike": self.torque_spike,
             "power": {
@@ -545,6 +511,11 @@ class DigitalTwinRig:
                 "actual_kw": round(self.actual_kw, 1),
                 "saved_kw": round(self.saved_kw, 1),
                 "saved_pct": round(saved_pct, 1),
+                "connected_capacity_kw": round(CONNECTED_CAPACITY_KW, 1),
+                "utilization_pct": round(utilization_pct, 1),
+                "dynamic_torque_kw": round(self.dynamic_torque_kw, 1),
+                "overload_active": self.overload_active,
+                "high_load_warning": self.high_load_warning,
             },
             "cumulative": {
                 "kwh_saved": round(self.kwh_saved_total, 2),
@@ -725,7 +696,6 @@ def serial_thread_worker(port: Optional[str], baud: int):
 
             serial_conn = s
             rig.hardware_connected = True
-            rig.mock_mode = False
             last_arduino_tokens = None  # Reset baseline on fresh connection
             rig.add_event("HARDWARE", f"Arduino Control Panel online on {target_port} ({baud} baud).", "success")
             logger.info(f"Arduino Control Panel online on {target_port}. Ready for buttons on pins 2-5...")
@@ -780,45 +750,6 @@ def serial_thread_worker(port: Optional[str], baud: int):
             time.sleep(2.0)
 
 
-def terminal_keyboard_loop():
-    """Terminal interactive listener from Aggies_Invent_Button_Code.py.
-    Allows typing 1, 2, 3, 4 + Enter into server terminal to trigger button panel."""
-    while True:
-        try:
-            line = sys.stdin.readline()
-            if not line:
-                time.sleep(0.5)
-                continue
-            key = line.strip()
-            if key in {"1", "2", "3", "4"}:
-                ch = int(key)
-                rig.handle_button_press(ch)
-                global serial_conn
-                if serial_conn:
-                    try:
-                        serial_conn.write(f"T{key}\n".encode("utf-8"))
-                        serial_conn.flush()
-                    except Exception:
-                        pass
-        except Exception:
-            time.sleep(1.0)
-
-
-async def mock_telemetry_worker():
-    """Generates synthetic telemetry in mock mode (dynamic pot, load variation, simulated crew)."""
-    t = 0.0
-    while True:
-        if not rig.hardware_connected:
-            t += 0.2
-            # Oscillate simulated torque pot around 350-550 with occasional spikes
-            base_pot = 420 + int(80 * math.sin(t * 0.5))
-            import random
-            noise = random.randint(-20, 20)
-            mock_pot = max(100, min(1000, base_pot + noise))
-            rig.update_sensors(mock_pot)
-        await asyncio.sleep(0.2)
-
-
 async def main_loop():
     """Main 5 Hz state calculation and WebSocket broadcast loop."""
     while True:
@@ -832,17 +763,10 @@ async def lifespan(app: FastAPI):
     # Start 5 Hz main simulation and broadcast loop
     asyncio.create_task(main_loop())
 
-    # Start mock simulator worker
-    asyncio.create_task(mock_telemetry_worker())
-
     # Start serial worker for Arduino control panel in dedicated OS thread
     global serial_port_name, serial_baud
     t_serial = threading.Thread(target=serial_thread_worker, args=(serial_port_name, serial_baud), daemon=True)
     t_serial.start()
-
-    # Start terminal keyboard listener thread
-    t_key = threading.Thread(target=terminal_keyboard_loop, daemon=True)
-    t_key.start()
 
     yield
 
@@ -972,7 +896,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
 def main():
     parser = argparse.ArgumentParser(description="Automated Rig Power SCADA Server")
-    parser.add_argument("--mock", action="store_true", help="Force mock hardware mode (no Arduino)")
     parser.add_argument("--port", type=str, default=None, help="Serial port for Arduino Button Panel (e.g. COM4 or /dev/ttyUSB0)")
     parser.add_argument("--baud", type=int, default=9600, help="Serial baud rate for button panel (default: 9600)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="HTTP / WebSocket host address (default: 0.0.0.0)")
@@ -1001,7 +924,6 @@ def main():
         imp = BUTTON_MAP.get(ch)
         name = IMPLEMENT_NAMES.get(imp, "Skipped / Unassigned") if imp else "Skipped / Unassigned"
         logger.info(f"  Channel {ch} (Pin {ch+1}): {name} [{imp or 'None'}]")
-    logger.info("  Type 1, 2, 3, 4 + Enter in terminal to simulate button presses.")
     logger.info("======================================================================")
 
     uvicorn.run(app, host=args.host, port=args.web_port, log_level="info")

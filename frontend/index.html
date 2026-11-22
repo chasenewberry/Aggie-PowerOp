@@ -84,7 +84,7 @@
           <div class="flex items-center gap-2">
             <h1 class="text-sm md:text-base font-bold tracking-tight text-slate-900 uppercase">Rig Power & Load Advisory SCADA</h1>
           </div>
-          <p class="text-xs text-slate-500 font-mono">Live Telemetry & Load Advisories</p>
+          <p class="text-xs text-slate-500 font-mono">Monitored MCC Sub-Panel Telemetry & Load Advisories</p>
         </div>
       </div>
 
@@ -100,6 +100,27 @@
         <div id="status-badge" class="flex items-center gap-2 px-3 py-1.5 rounded bg-slate-100 text-slate-800 border border-slate-300 font-bold">
           <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
           <span id="status-text">LOAD ADVISORY ACTIVE</span>
+        </div>
+
+        <!-- Audio Advisory Chime Toggle Switch & Test (iPad / Desktop) -->
+        <div class="flex items-center gap-1.5">
+          <button id="btn-audio-toggle" onclick="toggleAudioMute()" role="switch" aria-checked="true" class="flex items-center gap-2 px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-mono text-xs transition cursor-pointer select-none active:scale-95 shadow-xs" title="Toggle one-time audible warning chime for unnecessary systems">
+            <span id="audio-icon-wrap" class="flex items-center text-slate-700">
+              <svg id="audio-icon-svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              </svg>
+            </span>
+            <span class="font-bold tracking-wider text-[11px] text-slate-700">CHIME</span>
+            <div id="audio-switch-track" class="w-7 h-3.5 bg-emerald-600 rounded-full p-0.5 transition-colors duration-200 ease-in-out relative flex items-center">
+              <div id="audio-switch-thumb" class="w-2.5 h-2.5 bg-white rounded-full shadow-xs transform translate-x-3.5 transition-transform duration-200 ease-in-out"></div>
+            </div>
+            <span id="audio-status-text" class="font-bold text-[10px] text-emerald-800 font-mono w-6 text-left">ON</span>
+          </button>
+          <button id="btn-audio-test" onclick="testChimeSound(event)" class="px-2 py-1.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-600 hover:text-slate-900 font-mono text-[10px] font-bold transition active:scale-95 cursor-pointer shadow-xs" title="Play test chime to verify speaker audio">
+            TEST
+          </button>
         </div>
 
         <div id="failsafe-badge" class="hidden"></div>
@@ -118,7 +139,7 @@
         <span id="nominal-status-text"><strong>SYSTEM STATUS:</strong> All active loads aligned with current operational phase. Zero avoidable idle waste.</span>
       </div>
       <div class="hidden sm:flex items-center gap-4 text-slate-500">
-        <span>RATED CAPACITY: 710 kW</span>
+        <span id="rated-capacity-label">RIG SYSTEM RATED CAPACITY: 3,000 kW (3.0 MW)</span>
       </div>
     </div>
 
@@ -129,21 +150,31 @@
     </div>
 
     <!-- 3. Actionable Idle Waste Advisory Banner (Clean High-Contrast Alert) -->
-    <div id="waste-advisory-banner" class="hidden absolute inset-0 bg-amber-50 border-b-2 border-amber-500 px-4 flex items-center justify-between z-20">
+    <div id="waste-advisory-banner" class="hidden absolute inset-0 bg-amber-50 border-b-2 border-amber-500 px-4 flex items-center justify-between z-20" role="region" aria-live="polite">
       <div class="max-w-7xl mx-auto w-full flex items-center justify-between gap-3">
         <div class="flex items-center gap-2.5 text-xs text-slate-900 font-mono">
-          <span class="px-2 py-0.5 rounded bg-amber-600 text-white font-bold text-[11px]">OPERATOR ADVISORY</span>
+          <span class="px-2 py-0.5 rounded bg-amber-600 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-xs">
+            <svg id="waste-chime-icon" class="w-3 h-3 inline-block transition-transform duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span>OPERATOR ADVISORY</span>
+          </span>
           <span id="waste-count-text" class="font-bold text-amber-900">3 UNNECESSARY LOADS DETECTED</span>
           <span class="text-slate-400">|</span>
           <span id="waste-advisory-msg" class="text-slate-800">
-            Suggest local crew power down idle loads: <strong id="waste-kw-text" class="text-slate-900">255 kW</strong> (<span id="waste-cost-text" class="text-amber-800 font-bold">$66.30/hr</span> fuel waste).
+            Suggest local crew power down idle loads: <strong id="waste-kw-text" class="text-slate-900">245 kW</strong> (<span id="waste-cost-text" class="text-amber-800 font-bold">$63.70/hr</span> fuel waste).
           </span>
         </div>
 
         <div class="flex items-center gap-2">
-          <span class="text-[11px] font-mono font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded border border-amber-300">
-            AWAITING LOCAL CREW ACTION
+          <span id="chime-indicator-badge" class="hidden text-[10px] font-mono font-bold text-amber-900 bg-amber-200/90 px-2 py-0.5 rounded border border-amber-400 flex items-center gap-1 transition-all">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping"></span>
+            <span>CHIME ACTIVE</span>
           </span>
+          <button onclick="optimizeIdleLoads()" class="text-[11px] font-mono font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded border border-amber-300 cursor-pointer transition active:scale-95" title="Simulate crew turning off unnecessary loads">
+            AWAITING LOCAL CREW ACTION
+          </button>
         </div>
       </div>
     </div>
@@ -158,14 +189,14 @@
           </span>
           <span class="font-bold text-white tracking-wide">DOWNHOLE TORQUE SPIKE EXCEEDS THRESHOLD (&gt;850 ADC)</span>
           <span class="text-red-200">|</span>
-          <span class="text-red-100 hidden md:inline">
-            Top Drive draw surging (+135 kW) &bull; Severe drillstring resistance &bull; Hardware Strobe Tripped
+          <span id="torque-alarm-detail" class="text-red-100 hidden md:inline">
+            Top Drive draw surging &bull; Severe drillstring resistance &bull; Hardware Strobe Tripped
           </span>
         </div>
 
         <div class="flex items-center gap-2 font-mono text-[11px]">
           <span id="torque-alarm-adc" class="bg-red-800 text-red-100 px-2.5 py-0.5 rounded border border-red-500 font-bold">
-            ADC: 920 (+135 kW)
+            ADC: -- (+0 kW)
           </span>
           <span class="bg-white text-red-700 font-bold px-2 py-0.5 rounded shadow-sm">
             SAFETY THRESHOLD EXCEEDED
@@ -195,8 +226,8 @@
           <span class="text-xs text-slate-500 font-mono font-semibold">kW</span>
         </div>
         <div class="text-xs text-slate-600 font-mono mt-1.5 pt-1.5 border-t border-slate-200 flex justify-between">
-          <span>Connected Total:</span>
-          <span id="kpi-base-kw" class="font-semibold text-slate-800">710 kW</span>
+          <span>Connected Capacity:</span>
+          <span id="kpi-base-kw" class="font-semibold text-slate-800">3,000 kW</span>
         </div>
       </div>
 
@@ -331,8 +362,8 @@
                 <div class="flex items-center gap-1.5 mb-1">
                   <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">TIER 1 SAFETY INTERLOCK</span>
                 </div>
-                <h3 class="text-sm font-bold text-slate-900">Well Control & BOP Stack</h3>
-                <p class="text-xs text-slate-500 font-mono">Hydraulic Accumulator & Gas Sniffers</p>
+                <h3 class="text-sm font-bold text-slate-900">Well Control, BOP & Safety Controls</h3>
+                <p class="text-xs text-slate-500 font-mono">40 kW Rated · Accumulator Standby & Gas Detection</p>
               </div>
 
               <!-- Feeder Identifier Tag -->
@@ -343,7 +374,7 @@
 
             <div class="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
               <div class="font-mono text-sm text-slate-900">
-                <span class="font-bold text-base tabular-nums">35.0</span> <span class="text-xs text-slate-500">kW</span>
+                <span id="bop-kw" class="font-bold text-base tabular-nums">20.0</span> <span class="text-xs text-slate-500">kW</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-xs font-mono font-bold text-slate-800 bg-slate-200 px-2.5 py-1 rounded border border-slate-300 cursor-not-allowed">
@@ -361,8 +392,8 @@
                   <div class="flex items-center gap-1.5 mb-1">
                     <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 text-slate-700 border border-slate-300">PRIMARY PROCESS LOAD</span>
                   </div>
-                  <h3 class="text-sm font-bold text-slate-900">Rotary Table & Top Drive</h3>
-                  <p class="text-xs text-slate-500 font-mono">420 kW Primary Drilling Motor</p>
+                  <h3 class="text-sm font-bold text-slate-900">Top Drive System (Primary Rotary)</h3>
+                  <p class="text-xs text-slate-500 font-mono">2,400 kW AC Top Drive Motor (2.4 MW)</p>
                 </div>
 
                 <div id="rotary-icon" class="px-2 py-1 rounded text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">
@@ -382,7 +413,7 @@
                   <span class="w-2 h-2 rounded-full bg-red-600 animate-ping"></span>
                   CRITICAL ALARM: DRILLSTRING TORQUE OVERLOAD
                 </div>
-                <div class="text-red-900 mt-0.5">Torque exceeds 850 ADC threshold (+135 kW overload). Risk of bit stall or drillstring twist-off.</div>
+                <div id="rotary-alarm-detail" class="text-red-900 mt-0.5">Torque exceeds 850 ADC threshold. Risk of bit stall or drillstring twist-off.</div>
               </div>
             </div>
 
@@ -409,10 +440,10 @@
                   </div>
                   <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2 flex-wrap">
                     <span id="dot-shaker-light" class="inline-block w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-red-200 shrink-0 shadow-[0_0_6px_rgba(239,68,68,0.7)] transition-transform duration-200" title="Hardware Breadboard Indicator: Red Light (Button 1)"></span>
-                    <span>Shale Shaker & Mud Agitator</span>
+                    <span>Solids Control & Mud Mixing Package</span>
                     <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-red-100 text-red-700 border border-red-300">RED LIGHT</span>
                   </h3>
-                  <p class="text-xs text-slate-500 font-mono mt-0.5">110 kW Mud Solids Control</p>
+                  <p class="text-xs text-slate-500 font-mono mt-0.5">240 kW Rated · Shakers, Agitators & Centrifuge</p>
                 </div>
 
                 <div id="shaker-icon" class="px-2 py-1 rounded text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">
@@ -423,7 +454,7 @@
               <!-- Shaker Suggestion Box -->
               <div id="shaker-advisory" class="hidden mt-2.5 p-2 rounded bg-amber-50 border border-amber-300 text-[11px] font-mono text-amber-950">
                 <div class="font-bold text-amber-900">SUGGESTION: POWER DOWN FEEDER 03</div>
-                <div id="shaker-advisory-text" class="text-slate-700 mt-0.5">Mud circulation stopped. Suggest crew turn off to save 110 kW ($28.60/hr).</div>
+                <div id="shaker-advisory-text" class="text-slate-700 mt-0.5">Mud circulation stopped. Suggest crew turn off to save 215 kW ($55.90/hr).</div>
               </div>
             </div>
 
@@ -453,10 +484,10 @@
                   </div>
                   <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2 flex-wrap">
                     <span id="dot-fan-light" class="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-blue-200 shrink-0 shadow-[0_0_6px_rgba(59,130,246,0.7)] transition-transform duration-200" title="Hardware Breadboard Indicator: Blue Light (Button 3)"></span>
-                    <span>Ventilation & Motor Blower</span>
+                    <span>VFD House HVAC & Cooling Blowers</span>
                     <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-100 text-blue-700 border border-blue-300">BLUE LIGHT</span>
                   </h3>
-                  <p class="text-xs text-slate-500 font-mono mt-0.5">85 kW Motor Cooling Blower</p>
+                  <p class="text-xs text-slate-500 font-mono mt-0.5">180 kW Rated · PCR/VFD Cooling & Motor Blowers</p>
                 </div>
 
                 <div id="fan-icon" class="px-2 py-1 rounded text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">
@@ -467,7 +498,7 @@
               <!-- Fan Suggestion Box -->
               <div id="fan-advisory" class="hidden mt-2.5 p-2 rounded bg-amber-50 border border-amber-300 text-[11px] font-mono text-amber-950">
                 <div class="font-bold text-amber-900">SUGGESTION: POWER DOWN FEEDER 04</div>
-                <div id="fan-advisory-text" class="text-slate-700 mt-0.5">Drive motors idle. Suggest crew turn off blowers to save 85 kW ($22.10/hr).</div>
+                <div id="fan-advisory-text" class="text-slate-700 mt-0.5">Post-cooldown blowers idle. Suggest crew turn off blowers to save 145 kW ($37.70/hr).</div>
               </div>
             </div>
 
@@ -497,10 +528,10 @@
                   </div>
                   <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2 flex-wrap">
                     <span id="dot-lights-light" class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-200 shrink-0 shadow-[0_0_6px_rgba(16,185,129,0.7)] transition-transform duration-200" title="Hardware Breadboard Indicator: Green Light (Button 2)"></span>
-                    <span>Rig Lighting & Auxiliary Compressors</span>
+                    <span>Lighting, Air Compressors & Utility Aux</span>
                     <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">GREEN LIGHT</span>
                   </h3>
-                  <p class="text-xs text-slate-500 font-mono mt-0.5">60 kW Auxiliary Feeder Bank</p>
+                  <p class="text-xs text-slate-500 font-mono mt-0.5">140 kW Rated · Yard Lighting, Compressors & Utility Aux</p>
                 </div>
 
                 <div id="lights-icon" class="px-2 py-1 rounded text-xs font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300">
@@ -511,7 +542,7 @@
               <!-- Lights Suggestion Box -->
               <div id="lights-advisory" class="hidden mt-2.5 p-2 rounded bg-amber-50 border border-amber-300 text-[11px] font-mono text-amber-950">
                 <div class="font-bold text-amber-900">SUGGESTION: POWER DOWN FEEDER 05</div>
-                <div id="lights-advisory-text" class="text-slate-700 mt-0.5">Auxiliary bank idle in standby. Suggest crew turn off to save 60 kW ($15.60/hr).</div>
+                <div id="lights-advisory-text" class="text-slate-700 mt-0.5">Auxiliary bank idle in standby. Suggest crew turn off to save 120 kW ($31.20/hr).</div>
               </div>
             </div>
 
@@ -553,7 +584,7 @@
           <div class="flex justify-between text-[11px] font-mono text-slate-500 mt-1.5">
             <span>0 ADC (Tare)</span>
             <span class="text-amber-700 font-semibold">850 ADC</span>
-            <span>1023 ADC (+150 kW)</span>
+            <span>1023 ADC (+500 kW)</span>
           </div>
         </div>
         -->
@@ -571,12 +602,13 @@
                 <h3 class="text-xs uppercase tracking-wider font-bold text-slate-800">Live Power Demand (kW)</h3>
               </div>
               <span id="chart-spike-badge" class="hidden px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-600 text-white animate-pulse">
-                ⚠️ LOAD SURGE (+135 kW)
+                ⚠️ LOAD SURGE (+0 kW)
               </span>
             </div>
             <div class="flex items-center gap-3 text-xs font-mono font-semibold">
-              <span class="flex items-center gap-1.5 text-slate-500"><span class="w-3 h-0.5 bg-slate-400 inline-block border-t border-dashed border-slate-600"></span> Baseline (710 kW)</span>
-              <span class="flex items-center gap-1.5 text-slate-900"><span class="w-3 h-1 bg-slate-900 inline-block"></span> Active Draw</span>
+              <span class="flex items-center gap-1.5 text-red-600/80 whitespace-nowrap"><span class="w-3 h-0.5 inline-block border-t border-dotted border-red-500"></span> <span id="chart-cap-label">Rated (3,000 kW)</span></span>
+              <span class="flex items-center gap-1.5 text-slate-500 whitespace-nowrap"><span class="w-3 h-0.5 bg-slate-400 inline-block border-t border-dashed border-slate-600"></span> <span id="chart-baseline-label">Baseline (2,500 kW)</span></span>
+              <span class="flex items-center gap-1.5 text-slate-900 whitespace-nowrap"><span class="w-3 h-1 bg-slate-900 inline-block"></span> Active Draw</span>
             </div>
           </div>
           <div class="h-56 w-full">
@@ -612,6 +644,7 @@
     let prevImpStates = {};
     const maxDataPoints = 30;
     const timeLabels = [];
+    const capacityData = [];
     const baselineData = [];
     const actualData = [];
 
@@ -625,6 +658,7 @@
     // Initialize UI on load
     window.addEventListener('DOMContentLoaded', () => {
       initCharts();
+      updateAudioToggleUI();
       connectWebSocket();
     });
 
@@ -633,6 +667,7 @@
       const ctxLine = document.getElementById('lineChart').getContext('2d');
       for (let i = 0; i < maxDataPoints; i++) {
         timeLabels.push('');
+        capacityData.push(null);
         baselineData.push(null);
         actualData.push(null);
       }
@@ -643,7 +678,16 @@
           labels: timeLabels,
           datasets: [
             {
-              label: 'Connected Baseline',
+              label: 'Rated Capacity',
+              data: capacityData,
+              borderColor: 'rgba(220, 38, 38, 0.55)',
+              borderWidth: 1.5,
+              borderDash: [3, 3],
+              pointRadius: 0,
+              fill: false
+            },
+            {
+              label: 'Operating Baseline',
               data: baselineData,
               borderColor: '#94A3B8',
               borderWidth: 2,
@@ -668,13 +712,20 @@
           responsive: true,
           maintainAspectRatio: false,
           animation: false,
+          layout: {
+            padding: { left: 8 }
+          },
           scales: {
             x: { display: false },
             y: {
               min: 0,
-              max: 900,
+              max: 3500,
               grid: { color: '#E2E8F0' },
-              ticks: { color: '#475569', font: { family: 'JetBrains Mono', size: 10 } }
+              ticks: {
+                color: '#475569',
+                font: { family: 'JetBrains Mono', size: 10 },
+                callback: (value) => String(value)
+              }
             }
           },
           plugins: {
@@ -753,23 +804,206 @@
       sendCommand({ action: 'set_pot', value: parseInt(val) });
     }
 
+    // ==========================================
+    // AUDIO ENGINE & SCADA WARNING CHIMES
+    // ==========================================
     let audioCtx = null;
+    let isAudioMuted = (localStorage.getItem('rig_chime_muted') === 'true');
     let lastTorqueSpikeState = false;
-    function playAlarmChime() {
+    let lastUnnecessaryState = false;
+    let lastAdvisoryCount = 0;
+
+    function getAudioContext() {
       try {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+        return audioCtx;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Auto-unlock Web Audio on user interactions anywhere on screen (iPad Safari & modern browsers)
+    function unlockAudio() {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+    }
+    ['pointerdown', 'touchstart', 'click', 'keydown', 'mousedown'].forEach(evt => {
+      document.addEventListener(evt, unlockAudio, { passive: true });
+      window.addEventListener(evt, unlockAudio, { passive: true });
+    });
+
+    function toggleAudioMute() {
+      unlockAudio();
+      isAudioMuted = !isAudioMuted;
+      localStorage.setItem('rig_chime_muted', isAudioMuted ? 'true' : 'false');
+      updateAudioToggleUI();
+      if (!isAudioMuted) {
+        // Play soft confirmation preview chime
+        playUnnecessaryWarningChime(true);
+      }
+    }
+
+    const SVG_SOUND_ON = `<svg class="w-3.5 h-3.5 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+    const SVG_SOUND_OFF = `<svg class="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
+
+    function updateAudioToggleUI() {
+      const iconWrap = document.getElementById('audio-icon-wrap');
+      const text = document.getElementById('audio-status-text');
+      const track = document.getElementById('audio-switch-track');
+      const thumb = document.getElementById('audio-switch-thumb');
+      const btn = document.getElementById('btn-audio-toggle');
+      if (!btn) return;
+      if (isAudioMuted) {
+        if (iconWrap) iconWrap.innerHTML = SVG_SOUND_OFF;
+        if (text) {
+          text.innerText = 'OFF';
+          text.className = 'font-bold text-[10px] text-slate-500 font-mono w-6 text-left';
+        }
+        if (track) {
+          track.classList.remove('bg-emerald-600');
+          track.classList.add('bg-slate-300');
+        }
+        if (thumb) {
+          thumb.classList.remove('translate-x-3.5');
+          thumb.classList.add('translate-x-0');
+        }
+        btn.setAttribute('aria-checked', 'false');
+        btn.title = 'Audible warning chime muted. Click switch to enable.';
+      } else {
+        if (iconWrap) iconWrap.innerHTML = SVG_SOUND_ON;
+        if (text) {
+          text.innerText = 'ON';
+          text.className = 'font-bold text-[10px] text-emerald-800 font-mono w-6 text-left';
+        }
+        if (track) {
+          track.classList.remove('bg-slate-300');
+          track.classList.add('bg-emerald-600');
+        }
+        if (thumb) {
+          thumb.classList.remove('translate-x-0');
+          thumb.classList.add('translate-x-3.5');
+        }
+        btn.setAttribute('aria-checked', 'true');
+        btn.title = 'Audible warning chime active. Click switch to mute.';
+      }
+    }
+
+    function flashChimeVisuals() {
+      // 1. Flash chime badge in waste advisory banner
+      const badge = document.getElementById('chime-indicator-badge');
+      const chimeIcon = document.getElementById('waste-chime-icon');
+      if (badge) {
+        badge.classList.remove('hidden');
+        setTimeout(() => {
+          if (badge) badge.classList.add('hidden');
+        }, 3000);
+      }
+      if (chimeIcon) {
+        chimeIcon.classList.add('scale-125', 'text-amber-200');
+        setTimeout(() => {
+          if (chimeIcon) chimeIcon.classList.remove('scale-125', 'text-amber-200');
+        }, 800);
+      }
+
+      // 2. Subtle pulse on header audio switch
+      const audioBtn = document.getElementById('btn-audio-toggle');
+      if (audioBtn && !isAudioMuted) {
+        audioBtn.classList.add('ring-2', 'ring-emerald-400');
+        setTimeout(() => {
+          audioBtn.classList.remove('ring-2', 'ring-emerald-400');
+        }, 600);
+      }
+    }
+
+    // Audible warning chime for unnecessary running systems (E5 -> A5 ascending chime)
+    function playUnnecessaryWarningChime(forcePreview = false) {
+      if (isAudioMuted && !forcePreview) return;
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        const renderChime = () => {
+          const now = ctx.currentTime;
+
+          // Master gain: crisp, clear, solid volume (0.22)
+          const master = ctx.createGain();
+          master.gain.setValueAtTime(0.22, now);
+          master.connect(ctx.destination);
+
+          // Tone 1: E5 (659.25 Hz)
+          const osc1 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(659.25, now);
+          gain1.gain.setValueAtTime(0.001, now);
+          gain1.gain.linearRampToValueAtTime(0.85, now + 0.02);
+          gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+          osc1.connect(gain1);
+          gain1.connect(master);
+          osc1.start(now);
+          osc1.stop(now + 0.40);
+
+          // Tone 2: A5 (880.00 Hz) - 120ms offset
+          const t2 = now + 0.12;
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(880.00, t2);
+          gain2.gain.setValueAtTime(0.001, t2);
+          gain2.gain.linearRampToValueAtTime(1.0, t2 + 0.02);
+          gain2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.50);
+          osc2.connect(gain2);
+          gain2.connect(master);
+          osc2.start(t2);
+          osc2.stop(t2 + 0.52);
+
+          flashChimeVisuals();
+        };
+
+        if (ctx.state === 'suspended') {
+          ctx.resume().then(renderChime).catch(() => {});
+        } else {
+          renderChime();
+        }
+      } catch (err) {
+        console.warn('Audio chime playback issue:', err);
+      }
+    }
+
+    function testChimeSound(e) {
+      if (e) e.stopPropagation();
+      unlockAudio();
+      playUnnecessaryWarningChime(true);
+    }
+
+    // High-priority critical downhole torque alarm chime
+    function playAlarmChime() {
+      if (isAudioMuted) return;
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
-        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.12); // E5
-        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+        osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.12); // E5
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
         osc.connect(gain);
-        gain.connect(audioCtx.destination);
+        gain.connect(ctx.destination);
         osc.start();
-        osc.stop(audioCtx.currentTime + 0.35);
+        osc.stop(ctx.currentTime + 0.35);
       } catch (e) {
         // AudioContext not permitted or supported
       }
@@ -829,6 +1063,10 @@
           alarmHoldUntil = Math.max(alarmHoldUntil, Date.now() + 4000);
         }
         const isAlarmActive = (Date.now() < alarmHoldUntil);
+        const capKw = Number(data.power.connected_capacity_kw || 3000);
+        const utilPct = Number(data.power.utilization_pct || 0);
+        const isOverload = Boolean(data.power && data.power.overload_active);
+        const isHighLoad = Boolean(data.power && data.power.high_load_warning);
 
         // Audio Chime trigger on alarm transition
         if (isAlarmActive && !lastTorqueSpikeState) {
@@ -839,6 +1077,25 @@
         const unnecessaryKw = (data.unnecessary_kw !== undefined)
           ? Number(data.unnecessary_kw)
           : ((data.advisories || []).reduce((sum, a) => sum + (Number(a.savings_kw) || 0), 0));
+        const currentAdvCount = (data.advisory_count !== undefined)
+          ? Number(data.advisory_count)
+          : (data.advisories ? data.advisories.length : 0);
+        const hasUnnecessarySystems = (currentAdvCount > 0) || (unnecessaryKw > 0);
+
+        // Audible Warning Chime: Sound a one-time chime when unnecessary systems become active or increase
+        if (hasUnnecessarySystems) {
+          const justBecameActive = !lastUnnecessaryState;
+          const loadCountIncreased = (currentAdvCount > lastAdvisoryCount);
+
+          if (justBecameActive || loadCountIncreased) {
+            playUnnecessaryWarningChime();
+          }
+          lastUnnecessaryState = true;
+          lastAdvisoryCount = currentAdvCount;
+        } else {
+          lastUnnecessaryState = false;
+          lastAdvisoryCount = 0;
+        }
 
         // 1. System Status Badges
         const statusBadge = document.getElementById('status-badge');
@@ -848,11 +1105,18 @@
           if (statusBadge) statusBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded bg-red-600 text-white border border-red-700 font-bold animate-pulse shadow-sm';
           if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-white animate-ping';
           if (statusText) statusText.innerText = 'CRITICAL TORQUE';
-        } else {
+        } else if (data.hardware_connected) {
           if (statusBadge) statusBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded bg-slate-100 text-slate-800 border border-slate-300 font-bold';
-          if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-blue-600';
-          if (statusText) statusText.innerText = 'LOAD ADVISORY ACTIVE';
+          if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-600';
+          if (statusText) statusText.innerText = 'ARDUINO ONLINE · ADVISORY ACTIVE';
+        } else {
+          if (statusBadge) statusBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded bg-amber-50 text-amber-900 border border-amber-400 font-bold';
+          if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse';
+          if (statusText) statusText.innerText = 'WAITING FOR ARDUINO';
         }
+
+        const ratedLabel = document.getElementById('rated-capacity-label');
+        if (ratedLabel) ratedLabel.innerText = `SUB-PANEL RATED CAPACITY: ${capKw.toFixed(0)} kW`;
 
         // 2. Notification Ribbon Banners (Operator Advisories)
         const statusRibbonNominal = document.getElementById('status-ribbon-nominal');
@@ -862,10 +1126,15 @@
         // 2b. Critical Downhole Torque Spike Alarm Banner
         const torqueBanner = document.getElementById('torque-alarm-banner');
         const torqueAlarmAdc = document.getElementById('torque-alarm-adc');
+        const torqueAlarmDetail = document.getElementById('torque-alarm-detail');
+        const dynamicTorqueKw = Number(data.power.dynamic_torque_kw || 0);
         if (isAlarmActive) {
           if (torqueBanner) torqueBanner.classList.remove('hidden');
           const dispPot = (data.pot_raw > 850) ? data.pot_raw : 920;
-          if (torqueAlarmAdc) torqueAlarmAdc.innerText = `ADC: ${dispPot} (+${((dispPot/1023)*150).toFixed(0)} kW)`;
+          if (torqueAlarmAdc) torqueAlarmAdc.innerText = `ADC: ${dispPot} (+${dynamicTorqueKw.toFixed(0)} kW)`;
+          if (torqueAlarmDetail) torqueAlarmDetail.innerText = `Top Drive draw surging (+${dynamicTorqueKw.toFixed(0)} kW) • Severe drillstring resistance • Hardware Strobe Tripped`;
+          const rotaryAlarmDetail = document.getElementById('rotary-alarm-detail');
+          if (rotaryAlarmDetail) rotaryAlarmDetail.innerText = `Torque exceeds 850 ADC threshold (+${dynamicTorqueKw.toFixed(0)} kW). Risk of bit stall or drillstring twist-off.`;
         } else {
           if (torqueBanner) torqueBanner.classList.add('hidden');
         }
@@ -882,12 +1151,15 @@
           const kwEl = document.getElementById('waste-kw-text');
           if (kwEl) kwEl.innerText = `${unnecessaryKw.toFixed(0)} kW`;
 
+          const totalWasteCost = data.advisories.reduce((sum, advisory) => sum + (Number(advisory.cost_hr) || 0), 0);
           const msgEl = document.getElementById('waste-advisory-msg');
           if (msgEl) {
-            msgEl.innerHTML = `Suggest local crew power down ${feeders} — <strong class="text-slate-900">${unnecessaryKw.toFixed(0)} kW</strong> unnecessary load running.`;
+            msgEl.innerHTML = `Suggest local crew power down ${feeders} — <strong class="text-slate-900">${unnecessaryKw.toFixed(0)} kW</strong> (<strong class="text-amber-800">$${totalWasteCost.toFixed(2)}/hr</strong>) unnecessary load running.`;
           }
         } else {
           if (wasteBanner) wasteBanner.classList.add('hidden');
+          const chimeBadge = document.getElementById('chime-indicator-badge');
+          if (chimeBadge) chimeBadge.classList.add('hidden');
           if (statusRibbonNominal) statusRibbonNominal.classList.remove('hidden');
           if (nominalStatusText) {
             nominalStatusText.innerHTML = `<strong>SYSTEM STATUS:</strong> All active loads aligned with current operational phase. Zero unnecessary loads detected.`;
@@ -909,17 +1181,28 @@
         }
 
         const baseKwEl = document.getElementById('kpi-base-kw');
-        if (baseKwEl) baseKwEl.innerText = `${Number(data.power.base_kw).toFixed(1)} kW`;
+        if (baseKwEl) baseKwEl.innerText = `${capKw.toFixed(0)} kW (${utilPct.toFixed(1)}%)`;
 
         const rigStateEl = document.getElementById('kpi-rig-state');
         if (rigStateEl) rigStateEl.innerText = data.rig_state.replace('_', ' ');
 
         const stateDescEl = document.getElementById('kpi-state-desc');
         if (stateDescEl) {
-          if (data.rig_state === 'ACTIVE_DRILLING') stateDescEl.innerText = 'Primary & Aux Active';
-          else if (data.rig_state === 'PIPE_CONNECTION') stateDescEl.innerText = 'Rotary Idle · Aux Running';
-          else if (data.rig_state === 'TRIPPING') stateDescEl.innerText = 'Tripping Pipe · Aux Running';
-          else if (data.rig_state === 'IDLE_STANDBY') stateDescEl.innerText = 'Standby · Aux Running';
+          const auxKeys = ['shaker', 'fan', 'lights'];
+          const auxStates = auxKeys.map(key => Boolean(data.implements && data.implements[key] && data.implements[key].on));
+          const allAuxOn = auxStates.every(Boolean);
+          const allAuxShed = auxStates.every(on => !on);
+          const auxStatus = allAuxOn ? 'Aux Running' : (allAuxShed ? 'Aux Shed' : 'Aux Partially Shed');
+
+          if (data.rig_state === 'ACTIVE_DRILLING') {
+            stateDescEl.innerText = allAuxOn ? 'Primary & Aux Active' : `Primary Active · ${auxStatus}`;
+          } else if (data.rig_state === 'PIPE_CONNECTION') {
+            stateDescEl.innerText = `Rotary Idle · ${auxStatus}`;
+          } else if (data.rig_state === 'TRIPPING') {
+            stateDescEl.innerText = `Tripping Pipe · ${auxStatus}`;
+          } else if (data.rig_state === 'IDLE_STANDBY') {
+            stateDescEl.innerText = allAuxShed ? 'Standby · Minimal Essential Load' : `Standby · ${auxStatus}`;
+          }
         }
 
         const advCountEl = document.getElementById('kpi-advisory-count');
@@ -929,7 +1212,25 @@
         const advBadgeEl = document.getElementById('kpi-advisory-badge');
         const advCardEl = document.getElementById('kpi-advisories-card');
         if (advStatusEl) {
-          if (data.advisory_count > 0) {
+          if (isOverload) {
+            advStatusEl.className = 'font-bold text-red-700';
+            advStatusEl.innerText = 'Capacity Exceeded (>100%)';
+            if (advBadgeEl) {
+              advBadgeEl.className = 'text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-600 text-white';
+              advBadgeEl.innerText = 'OVERLOAD';
+            }
+            if (advCardEl) advCardEl.className = 'scada-card p-3 flex flex-col justify-between border-2 border-red-600 bg-red-50/30';
+            if (nominalStatusText) nominalStatusText.innerHTML = '<strong>OVERLOAD ALARM:</strong> Active demand exceeds sub-panel or feeder nameplate rating.';
+          } else if (isAlarmActive || (isHighLoad && data.advisory_count === 0)) {
+            advStatusEl.className = 'font-bold text-amber-700';
+            advStatusEl.innerText = 'Elevated Load / Torque Surge';
+            if (advBadgeEl) {
+              advBadgeEl.className = 'text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-600 text-white';
+              advBadgeEl.innerText = 'HIGH LOAD';
+            }
+            if (advCardEl) advCardEl.className = 'scada-card p-3 flex flex-col justify-between border-2 border-amber-500 bg-amber-50/20';
+            if (nominalStatusText) nominalStatusText.innerHTML = `<strong>ELEVATED LOAD:</strong> Active demand at ${utilPct.toFixed(1)}% of rated sub-panel capacity.`;
+          } else if (data.advisory_count > 0) {
             advStatusEl.className = 'font-bold text-amber-700';
             advStatusEl.innerText = `${data.advisory_count} Action${data.advisory_count > 1 ? 's' : ''} Recommended`;
             if (advBadgeEl) {
@@ -953,6 +1254,15 @@
 
         const unnecFeedersEl = document.getElementById('kpi-unnecessary-feeders');
         if (unnecFeedersEl) unnecFeedersEl.innerText = `${data.advisory_count} Feeder${data.advisory_count === 1 ? '' : 's'}`;
+
+        const kpiWasteCard = document.getElementById('kpi-waste-card');
+        if (kpiWasteCard) {
+          if (hasUnnecessarySystems) {
+            kpiWasteCard.className = 'scada-card p-3 flex flex-col justify-between border-2 border-amber-500 bg-amber-50/25 transition-colors shadow-sm';
+          } else {
+            kpiWasteCard.className = 'scada-card p-3 flex flex-col justify-between transition-colors';
+          }
+        }
 
         // Update legacy IDs safely
         const safeSet = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
@@ -983,6 +1293,8 @@
         // 5. Equipment Implement Feeder Bays & Dynamic Advisories
         const imps = data.implements || {};
         const advList = data.advisories || [];
+        const bopKwEl = document.getElementById('bop-kw');
+        if (imps.bop && bopKwEl) bopKwEl.innerText = Number(imps.bop.kw).toFixed(1);
 
         // Flash hardware dots on state transitions (mirrors breadboard LED pulses)
         if (imps.shaker) {
@@ -1023,12 +1335,12 @@
 
 
 
-          if (isAlarmActive) {
+          if (isAlarmActive || imps.rotary.overloaded) {
             if (rotaryCard) rotaryCard.className = 'scada-card p-4 flex flex-col justify-between border-2 border-red-600 bg-red-50/40 shadow-md ring-4 ring-red-200 transition-all';
             if (rotaryPill) {
               rotaryPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-red-600 text-white animate-pulse shadow-sm';
               const dispPot = (data.pot_raw > 850) ? data.pot_raw : 920;
-              rotaryPill.innerText = `OVERLOAD (+${((dispPot/1023)*150).toFixed(0)} kW)`;
+              rotaryPill.innerText = `OVERLOAD (+${((dispPot/1023)*500).toFixed(0)} kW)`;
             }
             if (rotaryAlarmBox) rotaryAlarmBox.classList.remove('hidden');
             if (rotaryAdvBox) rotaryAdvBox.classList.add('hidden');
@@ -1211,7 +1523,7 @@
           const dispPot = (data.pot_raw > 850) ? data.pot_raw : 920;
           if (potDisp) {
             potDisp.className = 'font-mono text-xs font-black text-red-700 tabular-nums animate-pulse';
-            potDisp.innerText = `ADC: ${dispPot} (+${((dispPot/1023)*150).toFixed(0)} kW OVERLOAD)`;
+            potDisp.innerText = `ADC: ${dispPot} (+${((dispPot/1023)*500).toFixed(0)} kW OVERLOAD)`;
           }
           if (torqueCard) torqueCard.className = 'scada-card p-3.5 border-2 border-red-500 bg-red-50/40 ring-4 ring-red-200 shadow-md transition-all';
           if (spikeBadge) spikeBadge.classList.remove('hidden');
@@ -1219,7 +1531,7 @@
         } else {
           if (potDisp) {
             potDisp.className = 'font-mono text-xs text-slate-900 font-bold tabular-nums';
-            potDisp.innerText = `ADC: ${data.pot_raw} (+${((data.pot_raw/1023)*150).toFixed(0)} kW Torque)`;
+            potDisp.innerText = `ADC: ${data.pot_raw} (+${((data.pot_raw/1023)*500).toFixed(0)} kW Torque)`;
           }
           if (torqueCard) torqueCard.className = 'scada-card p-3.5 transition-all';
           if (spikeBadge) spikeBadge.classList.add('hidden');
@@ -1231,12 +1543,20 @@
           slider.value = isAlarmActive ? Math.max(Number(data.pot_raw) || 0, 920) : data.pot_raw;
         }
 
+        const chartCapLabel = document.getElementById('chart-cap-label');
+        const chartBaselineLabel = document.getElementById('chart-baseline-label');
+        if (chartCapLabel) chartCapLabel.innerText = `Rated (${capKw.toFixed(0)} kW)`;
+        if (chartBaselineLabel) chartBaselineLabel.innerText = `Baseline (${Number(data.power.base_kw).toFixed(0)} kW)`;
+        if (chartSpikeBadge) chartSpikeBadge.innerText = `⚠️ LOAD SURGE (+${Number(data.power.dynamic_torque_kw || 0).toFixed(0)} kW)`;
+
         // 9. Update Live Rolling Line Chart
         if (lineChart) {
+          capacityData.push(capKw);
           baselineData.push(data.power.base_kw);
           actualData.push(data.power.actual_kw);
           timeLabels.push('');
           if (baselineData.length > maxDataPoints) {
+            capacityData.shift();
             baselineData.shift();
             actualData.shift();
             timeLabels.shift();
