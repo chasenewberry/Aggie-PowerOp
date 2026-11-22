@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, List, Optional, Set, Tuple
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -809,12 +809,17 @@ async def get_button_map():
 @app.post("/api/command")
 async def handle_rest_command(cmd: dict):
     action = cmd.get("action")
+    local_only_actions = {
+        "button_press", "toggle_implement", "set_implement",
+        "optimize_idle", "simulate_crew_compliance", "simulate_all_on",
+    }
+    if action in local_only_actions:
+        raise HTTPException(
+            status_code=403,
+            detail="Feeder state changes are permitted only from the local Arduino control panel.",
+        )
     if action == "set_state":
         rig.set_rig_state(cmd.get("state", "ACTIVE_DRILLING"))
-    elif action == "button_press":
-        ch = int(cmd.get("channel", 1))
-        st = cmd.get("state", None)
-        rig.handle_button_press(ch, st)
     elif action == "toggle_override":
         rig.set_manual_override(not rig.manual_override)
     elif action == "set_override":
@@ -831,16 +836,6 @@ async def handle_rest_command(cmd: dict):
     elif action == "trigger_torque_spike":
         duration = float(cmd.get("duration", 4.0))
         rig.trigger_torque_spike(duration=duration)
-    elif action == "toggle_implement":
-        imp = cmd.get("implement")
-        cur = rig.implements.get(imp, 0)
-        rig.set_implement_state(imp, not bool(cur))
-    elif action == "set_implement":
-        rig.set_implement_state(cmd.get("implement"), bool(cmd.get("value", False)))
-    elif action == "optimize_idle" or action == "simulate_crew_compliance":
-        rig.simulate_crew_compliance()
-    elif action == "simulate_all_on":
-        rig.simulate_all_on()
     elif action == "clear_events":
         rig.events.clear()
         rig.add_event("SYSTEM", "Event log cleared by operator.")
@@ -859,12 +854,19 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 cmd = json.loads(text)
                 action = cmd.get("action")
+                local_only_actions = {
+                    "button_press", "toggle_implement", "set_implement",
+                    "optimize_idle", "simulate_crew_compliance", "simulate_all_on",
+                }
+                if action in local_only_actions:
+                    rig.add_event(
+                        "SAFETY",
+                        f"Remote feeder command rejected: {action} (local Arduino panel only).",
+                        "warning",
+                    )
+                    continue
                 if action == "set_state":
                     rig.set_rig_state(cmd.get("state", "ACTIVE_DRILLING"))
-                elif action == "button_press":
-                    ch = int(cmd.get("channel", 1))
-                    st = cmd.get("state", None)
-                    rig.handle_button_press(ch, st)
                 elif action == "set_pot":
                     val = int(cmd.get("value", 400))
                     if rig.simulated_spike_end_time > 0 and val <= 850:
@@ -873,16 +875,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif action == "trigger_torque_spike":
                     duration = float(cmd.get("duration", 4.0))
                     rig.trigger_torque_spike(duration=duration)
-                elif action == "toggle_implement":
-                    imp = cmd.get("implement")
-                    cur = rig.implements.get(imp, 0)
-                    rig.set_implement_state(imp, not bool(cur))
-                elif action == "set_implement":
-                    rig.set_implement_state(cmd.get("implement"), bool(cmd.get("value", False)))
-                elif action == "optimize_idle" or action == "simulate_crew_compliance":
-                    rig.simulate_crew_compliance()
-                elif action == "simulate_all_on":
-                    rig.simulate_all_on()
                 elif action == "clear_events":
                     rig.events.clear()
                     rig.add_event("SYSTEM", "Event log cleared by operator.")

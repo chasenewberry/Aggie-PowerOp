@@ -172,9 +172,9 @@
             <span class="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping"></span>
             <span>CHIME ACTIVE</span>
           </span>
-          <button onclick="optimizeIdleLoads()" class="text-[11px] font-mono font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded border border-amber-300 cursor-pointer transition active:scale-95" title="Simulate crew turning off unnecessary loads">
+          <span class="text-[11px] font-mono font-bold text-amber-900 bg-amber-100 px-2.5 py-1 rounded border border-amber-300" title="Feeder changes are permitted only from the local Arduino control panel">
             AWAITING LOCAL CREW ACTION
-          </button>
+          </span>
         </div>
       </div>
     </div>
@@ -360,7 +360,7 @@
             <div class="flex items-start justify-between">
               <div>
                 <div class="flex items-center gap-1.5 mb-1">
-                  <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">TIER 1 SAFETY INTERLOCK</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 text-slate-700 border border-slate-300">CORE SYSTEMS</span>
                 </div>
                 <h3 class="text-sm font-bold text-slate-900">Well Control, BOP & Safety Controls</h3>
                 <p class="text-xs text-slate-500 font-mono">40 kW Rated · Accumulator Standby & Gas Detection</p>
@@ -463,10 +463,7 @@
                 <span id="shaker-kw" class="font-bold text-base tabular-nums">--</span> <span class="text-xs text-slate-500">kW</span>
               </div>
               <div class="flex items-center gap-2">
-                <button id="toggle-btn-shaker" onclick="toggleImplement('shaker')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Hardware Panel: Button 1 (Red LED) / Shale Shaker">
-                  <span id="shaker-status-pill" class="text-xs font-mono">OFF</span>
-                  <span id="shaker-toggle-knob" class="w-4 h-2 rounded-full bg-slate-400"></span>
-                </button>
+                <span id="shaker-status-pill" class="text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-slate-300" title="Read-only state mirrored from Arduino Control Panel Button 1">STANDBY (OFF)</span>
               </div>
             </div>
           </div>
@@ -507,10 +504,7 @@
                 <span id="fan-kw" class="font-bold text-base tabular-nums">--</span> <span class="text-xs text-slate-500">kW</span>
               </div>
               <div class="flex items-center gap-2">
-                <button id="toggle-btn-fan" onclick="toggleImplement('fan')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Hardware Panel: Button 3 (Blue LED) / Ventilation">
-                  <span id="fan-status-pill" class="text-xs font-mono">OFF</span>
-                  <span id="fan-toggle-knob" class="w-4 h-2 rounded-full bg-slate-400"></span>
-                </button>
+                <span id="fan-status-pill" class="text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-slate-300" title="Read-only state mirrored from Arduino Control Panel Button 3">STANDBY (OFF)</span>
               </div>
             </div>
           </div>
@@ -551,10 +545,7 @@
                 <span id="lights-kw" class="font-bold text-base tabular-nums">--</span> <span class="text-xs text-slate-500">kW</span>
               </div>
               <div class="flex items-center gap-2">
-                <button id="toggle-btn-lights" onclick="toggleImplement('lights')" class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white hover:bg-slate-100" title="Hardware Panel: Button 2 (Green LED) / Rig Lighting">
-                  <span id="lights-status-pill" class="text-xs font-mono">OFF</span>
-                  <span id="lights-toggle-knob" class="w-4 h-2 rounded-full bg-slate-400"></span>
-                </button>
+                <span id="lights-status-pill" class="text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-slate-300" title="Read-only state mirrored from Arduino Control Panel Button 2">STANDBY (OFF)</span>
               </div>
             </div>
           </div>
@@ -787,14 +778,6 @@
     }
 
     function simulateCrewCompliance() {
-      sendCommand({ action: 'simulate_crew_compliance' });
-    }
-
-    function toggleImplement(imp) {
-      sendCommand({ action: 'toggle_implement', implement: imp });
-    }
-
-    function optimizeIdleLoads() {
       sendCommand({ action: 'simulate_crew_compliance' });
     }
 
@@ -1382,19 +1365,15 @@
           if (shakerKwEl) shakerKwEl.innerText = Number(imps.shaker.kw).toFixed(1);
           const shakerCard = document.getElementById('card-shaker');
           const shakerPill = document.getElementById('shaker-status-pill');
-          const shakerBtn = document.getElementById('toggle-btn-shaker');
-          const shakerKnob = document.getElementById('shaker-toggle-knob');
           const shakerAdv = advList.find(a => a.implement === 'shaker');
           const shakerAdvBox = document.getElementById('shaker-advisory');
 
           if (shakerAdv) {
             if (shakerCard) shakerCard.className = 'scada-card p-4 flex flex-col justify-between border-2 border-amber-500 bg-amber-50/20 shadow-sm transition-all';
             if (shakerPill) {
-              shakerPill.className = 'text-xs font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-400';
+              shakerPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-amber-100 text-amber-900 border border-amber-400';
               shakerPill.innerText = 'RUNNING (UNNECESSARY)';
             }
-            if (shakerBtn) shakerBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-amber-500 bg-amber-100 text-amber-900';
-            if (shakerKnob) shakerKnob.className = 'w-4 h-2 rounded-full bg-amber-600';
             if (shakerAdvBox) {
               shakerAdvBox.classList.remove('hidden');
               const textEl = document.getElementById('shaker-advisory-text');
@@ -1403,20 +1382,16 @@
           } else if (shakerOn) {
             if (shakerCard) shakerCard.className = 'scada-card p-4 flex flex-col justify-between border-2 border-slate-900 shadow-sm transition-all';
             if (shakerPill) {
-              shakerPill.className = 'text-xs font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300';
+              shakerPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 border border-emerald-300';
               shakerPill.innerText = 'ACTIVE PROCESS';
             }
-            if (shakerBtn) shakerBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-emerald-600 bg-emerald-50 text-emerald-800';
-            if (shakerKnob) shakerKnob.className = 'w-4 h-2 rounded-full bg-emerald-600';
             if (shakerAdvBox) shakerAdvBox.classList.add('hidden');
           } else {
             if (shakerCard) shakerCard.className = 'scada-card p-4 flex flex-col justify-between opacity-75 transition-all';
             if (shakerPill) {
-              shakerPill.className = 'text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-300';
+              shakerPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-600 border border-slate-300';
               shakerPill.innerText = 'STANDBY (OFF)';
             }
-            if (shakerBtn) shakerBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white text-slate-600 hover:bg-slate-100';
-            if (shakerKnob) shakerKnob.className = 'w-4 h-2 rounded-full bg-slate-400';
             if (shakerAdvBox) shakerAdvBox.classList.add('hidden');
           }
         }
@@ -1428,19 +1403,15 @@
           if (fanKwEl) fanKwEl.innerText = Number(imps.fan.kw).toFixed(1);
           const fanCard = document.getElementById('card-fan');
           const fanPill = document.getElementById('fan-status-pill');
-          const fanBtn = document.getElementById('toggle-btn-fan');
-          const fanKnob = document.getElementById('fan-toggle-knob');
           const fanAdv = advList.find(a => a.implement === 'fan');
           const fanAdvBox = document.getElementById('fan-advisory');
 
           if (fanAdv) {
             if (fanCard) fanCard.className = 'scada-card p-4 flex flex-col justify-between border-2 border-amber-500 bg-amber-50/20 shadow-sm transition-all';
             if (fanPill) {
-              fanPill.className = 'text-xs font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-400';
+              fanPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-amber-100 text-amber-900 border border-amber-400';
               fanPill.innerText = 'RUNNING (UNNECESSARY)';
             }
-            if (fanBtn) fanBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-amber-500 bg-amber-100 text-amber-900';
-            if (fanKnob) fanKnob.className = 'w-4 h-2 rounded-full bg-amber-600';
             if (fanAdvBox) {
               fanAdvBox.classList.remove('hidden');
               const textEl = document.getElementById('fan-advisory-text');
@@ -1449,20 +1420,16 @@
           } else if (fanOn) {
             if (fanCard) fanCard.className = 'scada-card p-4 flex flex-col justify-between border-2 border-slate-900 shadow-sm transition-all';
             if (fanPill) {
-              fanPill.className = 'text-xs font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300';
+              fanPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 border border-emerald-300';
               fanPill.innerText = 'ACTIVE COOLING';
             }
-            if (fanBtn) fanBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-emerald-600 bg-emerald-50 text-emerald-800';
-            if (fanKnob) fanKnob.className = 'w-4 h-2 rounded-full bg-emerald-600';
             if (fanAdvBox) fanAdvBox.classList.add('hidden');
           } else {
             if (fanCard) fanCard.className = 'scada-card p-4 flex flex-col justify-between opacity-75 transition-all';
             if (fanPill) {
-              fanPill.className = 'text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-300';
+              fanPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-600 border border-slate-300';
               fanPill.innerText = 'STANDBY (OFF)';
             }
-            if (fanBtn) fanBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white text-slate-600 hover:bg-slate-100';
-            if (fanKnob) fanKnob.className = 'w-4 h-2 rounded-full bg-slate-400';
             if (fanAdvBox) fanAdvBox.classList.add('hidden');
           }
         }
@@ -1474,19 +1441,15 @@
           if (lightsKwEl) lightsKwEl.innerText = Number(imps.lights.kw).toFixed(1);
           const lightsCard = document.getElementById('card-lights');
           const lightsPill = document.getElementById('lights-status-pill');
-          const lightsBtn = document.getElementById('toggle-btn-lights');
-          const lightsKnob = document.getElementById('lights-toggle-knob');
           const lightsAdv = advList.find(a => a.implement === 'lights');
           const lightsAdvBox = document.getElementById('lights-advisory');
 
           if (lightsAdv) {
             if (lightsCard) lightsCard.className = 'scada-card p-4 flex flex-col justify-between sm:col-span-2 border-2 border-amber-500 bg-amber-50/20 shadow-sm transition-all';
             if (lightsPill) {
-              lightsPill.className = 'text-xs font-mono font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-400';
+              lightsPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-amber-100 text-amber-900 border border-amber-400';
               lightsPill.innerText = 'RUNNING (UNNECESSARY)';
             }
-            if (lightsBtn) lightsBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-amber-500 bg-amber-100 text-amber-900';
-            if (lightsKnob) lightsKnob.className = 'w-4 h-2 rounded-full bg-amber-600';
             if (lightsAdvBox) {
               lightsAdvBox.classList.remove('hidden');
               const textEl = document.getElementById('lights-advisory-text');
@@ -1495,20 +1458,16 @@
           } else if (lightsOn) {
             if (lightsCard) lightsCard.className = 'scada-card p-4 flex flex-col justify-between sm:col-span-2 border-2 border-slate-900 shadow-sm transition-all';
             if (lightsPill) {
-              lightsPill.className = 'text-xs font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300';
+              lightsPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 border border-emerald-300';
               lightsPill.innerText = 'ENERGIZED';
             }
-            if (lightsBtn) lightsBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-emerald-600 bg-emerald-50 text-emerald-800';
-            if (lightsKnob) lightsKnob.className = 'w-4 h-2 rounded-full bg-emerald-600';
             if (lightsAdvBox) lightsAdvBox.classList.add('hidden');
           } else {
             if (lightsCard) lightsCard.className = 'scada-card p-4 flex flex-col justify-between sm:col-span-2 opacity-75 transition-all';
             if (lightsPill) {
-              lightsPill.className = 'text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-300';
+              lightsPill.className = 'text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-600 border border-slate-300';
               lightsPill.innerText = 'STANDBY (OFF)';
             }
-            if (lightsBtn) lightsBtn.className = 'flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border transition active:scale-95 border-slate-300 bg-white text-slate-600 hover:bg-slate-100';
-            if (lightsKnob) lightsKnob.className = 'w-4 h-2 rounded-full bg-slate-400';
             if (lightsAdvBox) lightsAdvBox.classList.add('hidden');
           }
         }
