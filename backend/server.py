@@ -337,28 +337,35 @@ class DigitalTwinRig:
             self.rig_state = new_state
             self.add_event("MODE", f"Rig operational phase changed: {old_state} -> {new_state}", "info")
 
-            # In Active Drilling, start primary and auxiliary loads
+            # Rotary top drive is strictly controlled by operational phase:
             if new_state == "ACTIVE_DRILLING":
                 self.implements["rotary"] = 1
-                self.implements["shaker"] = 1
-                self.implements["fan"] = 1
-                self.implements["lights"] = 1
-                self.add_event("DRILLING", "All systems active for continuous drilling.", "info")
+                self.add_event("DRILLING", "Top drive energized for continuous drilling.", "info")
             else:
                 # Rotary is physically stopped during connection, tripping, and idle
                 self.implements["rotary"] = 0
-                # Leave Loads ON mode: auxiliary loads default to running, triggering advisories
-                self.implements["shaker"] = 1
-                self.implements["fan"] = 1
-                self.implements["lights"] = 1
 
-                # When entering IDLE_STANDBY or TRIPPING, auxiliary loads are left running by default.
-                # Generate an immediate advisory check!
-                adv = self.get_advisories()
-                if adv:
-                    total_wasted = sum(a["savings_kw"] for a in adv)
-                    total_cost = sum(a["cost_hr"] for a in adv)
-                    self.add_event("ADVISORY", f"Rig entered {new_state}: {len(adv)} unnecessary loads active ({total_wasted:.0f} kW). Suggestions issued to crew.", "warning")
+            # Auxiliary loads (shaker, fan, lights):
+            # Synchronization with physical Arduino lights MUST persist through phase switches!
+            global last_arduino_tokens
+            if last_arduino_tokens and len(last_arduino_tokens) >= 3:
+                self.implements["shaker"] = 1 if is_token_active(last_arduino_tokens[0]) else 0
+                self.implements["lights"] = 1 if is_token_active(last_arduino_tokens[1]) else 0
+                self.implements["fan"] = 1 if is_token_active(last_arduino_tokens[2]) else 0
+            elif not self.hardware_connected:
+                # Pure mock mode without Arduino: default auxiliary loads to ON when entering a phase
+                # so advisories can be demonstrated
+                if new_state == "ACTIVE_DRILLING":
+                    self.implements["shaker"] = 1
+                    self.implements["fan"] = 1
+                    self.implements["lights"] = 1
+
+            # When entering IDLE_STANDBY or TRIPPING, check for any active unnecessary loads
+            adv = self.get_advisories()
+            if adv:
+                total_wasted = sum(a["savings_kw"] for a in adv)
+                total_cost = sum(a["cost_hr"] for a in adv)
+                self.add_event("ADVISORY", f"Rig entered {new_state}: {len(adv)} unnecessary loads active ({total_wasted:.0f} kW). Suggestions issued to crew.", "warning")
 
     def set_implement_state(self, implement: str, state: bool):
         """Simulates physical local crew switch actions for demonstration purposes."""
@@ -613,6 +620,14 @@ last_arduino_tokens: Optional[List[str]] = None
 last_button_press_time: Dict[int, float] = {}
 
 
+VALID_STATE_TOKENS = {"ON", "OFF", "HIGH", "LOW", "1", "0", "TRUE", "FALSE", "ACTIVE", "INACTIVE", "STOPPED", "STARTED"}
+
+def is_token_active(token: str) -> bool:
+    """Returns True if the token represents an energized / high / on hardware state."""
+    t = token.strip().upper()
+    return t in {"ON", "HIGH", "1", "TRUE", "ACTIVE", "STARTED", "CLOSED", "PRESS"}
+
+
 def handle_arduino_serial_line(line: str):
     """Processes a line or token received from the Arduino control panel."""
     global last_arduino_tokens, last_button_press_time
@@ -624,60 +639,36 @@ def handle_arduino_serial_line(line: str):
     # Broadcast to SCADA dashboard log so the user immediately sees the received text in their browser!
     rig.add_event("ARDUINO-RX", f"Hardware Rx: '{line}'", "info")
 
-    # Check for multi-channel list: e.g. "ON,OFF,ON,ON" or "1,0,1,1" or "HIGH,LOW,HIGH,HIGH"
-    if "," in line or ";" in line or "/" in line:
-        tokens = [t.strip().upper() for t in re.split(r'[,;/]+', line) if t.strip()]
-        if len(tokens) >= 2:
-            now = time.time()
-            # If this is the first packet received since connection, initialize the baseline
-            if last_arduino_tokens is None:
-                # If all tokens are identical (e.g. all "ON" or all "OFF"), this is the idle baseline
-                if len(set(tokens)) <= 1:
-                    last_arduino_tokens = tokens[:]
-                    logger.info(f"[BUTTON-PANEL] Hardware baseline initialized (quiescent): {last_arduino_tokens}")
-                    return
-                else:
-                    # One or more channels are already toggled relative to the rest;
-                    # infer the baseline from the majority token so the active button press triggers
-                    from collections import Counter
-                    majority_val = Counter(tokens).most_common(1)[0][0]
-                    last_arduino_tokens = [majority_val] * len(tokens)
-                    logger.info(f"[BUTTON-PANEL] Hardware baseline inferred as: {last_arduino_tokens}")
+    # Check for multi-channel state list: e.g. "OFF,OFF,OFF", "ON,OFF,ON", "OFF OFF OFF", "ON, ON, ON"
+    candidate_tokens = [t.strip().upper() for t in re.split(r'[,;/\s]+', line) if t.strip()]
+    is_multi_state = (
+        len(candidate_tokens) >= 2
+        and all(t in VALID_STATE_TOKENS for t in candidate_tokens)
+    )
 
-            # HARDWARE DELTA DETECTION:
-            # ONLY identify channels where the physical Arduino state changed from the previous hardware report!
-            # Never compare against software state (cur_val), which prevents other feeders from toggling after phase changes.
-            changed_channels = []
-            for idx in range(min(len(tokens), len(last_arduino_tokens))):
-                if tokens[idx] != last_arduino_tokens[idx]:
-                    ch = idx + 1
-                    # Debounce rapid switch bounce (< 200 ms)
-                    if (now - last_button_press_time.get(ch, 0)) >= 0.20:
-                        changed_channels.append(ch)
-                        last_button_press_time[ch] = now
-
-            # Always update hardware state history with the latest reading
-            last_arduino_tokens = tokens[:]
-
-            if not changed_channels:
-                logger.debug(f"[BUTTON-PANEL] Duplicate multi-state received, no change: {tokens}")
-                return
-
-            for ch in changed_channels:
-                if ch in BUTTON_MAP and BUTTON_MAP[ch] is not None:
-                    imp = BUTTON_MAP[ch]
-                    rig.handle_button_press(ch)
-                    logger.info(f"[BUTTON-PANEL] Channel {ch} ({imp}) toggled via hardware state transition (now {tokens[ch-1]})")
-            return
+    if is_multi_state:
+        state_tokens = candidate_tokens
+        for idx in range(len(state_tokens)):
+            ch = idx + 1
+            if ch in BUTTON_MAP and BUTTON_MAP[ch] is not None:
+                imp = BUTTON_MAP[ch]
+                target_state = is_token_active(state_tokens[idx])
+                cur_state = bool(rig.implements.get(imp, 0))
+                # Direct state synchronization: website feeder state matches Arduino light state exactly
+                if cur_state != target_state:
+                    rig.handle_button_press(ch, explicit_state=target_state)
+                    logger.info(f"[BUTTON-PANEL] Hardware Channel {ch} ({imp}) synchronized to {'ON' if target_state else 'OFF'} (token: '{state_tokens[idx]}')")
+        last_arduino_tokens = state_tokens[:]
+        return
 
     parsed = parse_button_event(line)
     if parsed:
         ch, explicit_state = parsed
         now = time.time()
-        if (now - last_button_press_time.get(ch, 0)) >= 0.20:
+        if (now - last_button_press_time.get(ch, 0)) >= 0.15:
             last_button_press_time[ch] = now
             imp = rig.handle_button_press(ch, explicit_state)
-            logger.info(f"[BUTTON-PANEL] Hardware Button {ch} -> {imp} (raw: '{line}')")
+            logger.info(f"[BUTTON-PANEL] Hardware Button {ch} -> {imp} (state={explicit_state}, raw: '{line}')")
             global serial_conn
             if serial_conn:
                 try:

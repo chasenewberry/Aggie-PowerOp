@@ -186,39 +186,25 @@ def main() -> None:
                         line = rx_buf[:pos].strip()
                         rx_buf = rx_buf[pos+1:].lstrip("\r\n")
                         if line:
-                            if "," in line or ";" in line or "/" in line:
-                                tokens = [t.strip().upper() for t in re.split(r'[,;/]+', line) if t.strip()]
-                                if len(tokens) >= 2:
-                                    now = time.time()
-                                    if last_button_tokens is None:
-                                        if len(set(tokens)) <= 1:
-                                            last_button_tokens = tokens[:]
-                                            print(f"[STATUS] Hardware baseline initialized: {last_button_tokens}")
-                                            continue
-                                        else:
-                                            from collections import Counter
-                                            maj = Counter(tokens).most_common(1)[0][0]
-                                            last_button_tokens = [maj] * len(tokens)
-
-                                    changed = []
-                                    for idx in range(min(len(tokens), len(last_button_tokens))):
-                                        if tokens[idx] != last_button_tokens[idx]:
-                                            ch = idx + 1
-                                            if (now - last_press_time.get(ch, 0)) >= 0.20:
-                                                changed.append(ch)
-                                                last_press_time[ch] = now
-
-                                    last_button_tokens = tokens[:]
-
-                                    for ch in changed:
+                            candidate_tokens = [t.strip().upper() for t in re.split(r'[,;/\s]+', line) if t.strip()]
+                            is_multi_state = (
+                                len(candidate_tokens) >= 2
+                                and all(t in {"ON", "OFF", "HIGH", "LOW", "1", "0", "TRUE", "FALSE"} for t in candidate_tokens)
+                            )
+                            if is_multi_state:
+                                for idx in range(len(candidate_tokens)):
+                                    ch = idx + 1
+                                    st = candidate_tokens[idx] in {"ON", "HIGH", "1", "TRUE"}
+                                    if last_button_tokens is None or idx >= len(last_button_tokens) or last_button_tokens[idx] != candidate_tokens[idx]:
                                         if ch in BUTTON_MAPPING:
                                             info = BUTTON_MAPPING[ch]
                                             name = info.get("name")
                                             imp = info.get("implement")
                                             if imp:
-                                                print(f"  -> Hardware Button {ch} ({name}) toggling {imp}")
-                                                send_to_scada(ch)
-                                    continue
+                                                print(f"  -> Hardware Channel {ch} ({name}) synchronized to {'ON' if st else 'OFF'}")
+                                                send_to_scada(ch, explicit_state=st)
+                                last_button_tokens = candidate_tokens[:]
+                                continue
 
                             parsed = parse_button_event(line)
                             if parsed:
